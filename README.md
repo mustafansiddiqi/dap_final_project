@@ -1,6 +1,6 @@
 # Fire Perimeter Analysis
 
-This project processes and visualizes historical fire perimeter data.
+This project processes and visualizes historical fire perimeter data and Canadian CPI data.
 
 ## Setup
 
@@ -13,11 +13,15 @@ conda activate fire_analysis
 
 ```
 data/
-  raw-data/         # Raw fire.csv data
-  derived-data/     # Filtered data and output plots
+  raw-data/           # Raw data files
+    fire.csv          # Historical fire perimeter data
+    canadian_cpi.csv  # Canadian Consumer Price Index data
+  derived-data/       # Filtered data and output plots
+    fire_filtered.gpkg  # Fire data filtered to post-2015
+    cpi_filtered.csv    # CPI data filtered to 2020 onwards
 code/
-  preprocessing.py  # Filters fire data to post-2015
-  plot_fires.py     # Plots fire perimeters
+  preprocessing.py    # Filters fire and CPI data
+  plot_fires.py       # Plots fire perimeters
 ```
 
 ## Usage

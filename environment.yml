@@ -1,4 +1,4 @@
-name: fire_analysis
+name: air_quality_analysis
 channels:
   - conda-forge
 dependencies:

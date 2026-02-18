@@ -7,32 +7,39 @@ import altair as alt
 import streamlit as st
 
 import ee
-import geemap.foliumap as geemap
+import folium
 from streamlit_folium import st_folium
+from pathlib import Path
 
-
-
-# App config
+# Config
 
 st.set_page_config(page_title="Lahore Air Quality Decomposition", layout="wide")
 
-DATA_DIR = "data"
-PANEL_PATH = os.path.join(DATA_DIR, "lahore_monthly_panel.csv")
+APP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = APP_DIR.parent          # if app.py is in /code
+DATA_DIR = REPO_ROOT / "data"
+PANEL_PATH = DATA_DIR / "lahore_monthly_panel.csv"
 
-# Lahore AOI
+# Lahore bbox placeholder (should match preprocessing.py)
 LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
-LAHORE = ee.Geometry.Rectangle(LAHORE_BBOX)
 
 START = date(2019, 1, 1)
 END_EXCL = date(2024, 1, 1)
 
 
-
 # Helpers
 
 @st.cache_resource
-def ee_init():
-    ee.Initialize()
+def ee_setup():
+    try:
+        ee.Initialize()
+    except Exception:
+        ee.Authenticate()
+        ee.Initialize()
+
+    # Create AOI only after initialization
+    return ee.Geometry.Rectangle(LAHORE_BBOX)
+
 
 def month_list(start=START, end_excl=END_EXCL):
     out = []
@@ -42,87 +49,146 @@ def month_list(start=START, end_excl=END_EXCL):
         cur = (cur + relativedelta(months=1)).replace(day=1)
     return out
 
+
 MONTHS = month_list()
+
 
 def month_range(d: date):
     s = ee.Date(d.isoformat())
     e = s.advance(1, "month")
     return s, e
 
+
 @st.cache_data
 def load_panel(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"])
-    # Keep only 2019–2023
     df = df[(df["date"] >= "2019-01-01") & (df["date"] < "2024-01-01")].copy()
     return df.sort_values("date").reset_index(drop=True)
 
+
 def kpi_row(df: pd.DataFrame, dt: pd.Timestamp):
     row = df.loc[df["date"] == dt]
-    if row.empty:
-        return None
-    r = row.iloc[0].to_dict()
-    return r
+    return None if row.empty else row.iloc[0].to_dict()
 
 
+def add_ee_tile_layer(
+    fmap: folium.Map,
+    ee_image: ee.Image,
+    vis_params: dict,
+    name: str,
+    opacity: float = 0.8,
+):
+    map_id_dict = ee_image.getMapId(vis_params)
+    folium.TileLayer(
+        tiles=map_id_dict["tile_fetcher"].url_format,
+        attr="Google Earth Engine",
+        name=name,
+        overlay=True,
+        control=True,
+        opacity=opacity,
+    ).add_to(fmap)
 
-# EE layer builders
+# EE layer builders (AOI passed in)
 
-def ee_nightlights(month_date: date):
+def ee_nightlights(month_date: date, aoi: ee.Geometry):
     s, e = month_range(month_date)
-    img = (ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG")
-           .filterDate(s, e)
-           .select("avg_rad")
-           .mean()
-           .clip(LAHORE))
+    img = (
+        ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG")
+        .filterDate(s, e)
+        .select("avg_rad")
+        .mean()
+        .clip(aoi)
+    )
     vis = {"min": 0, "max": 60}
     return img, vis, "Nightlights (VIIRS)"
 
-def ee_ndvi(month_date: date):
+
+def ee_ndvi(month_date: date, aoi: ee.Geometry):
     s, e = month_range(month_date)
-    img = (ee.ImageCollection("MODIS/061/MOD13Q1")
-           .filterDate(s, e)
-           .select("NDVI")
-           .mean()
-           .multiply(0.0001)
-           .clip(LAHORE))
+    img = (
+        ee.ImageCollection("MODIS/061/MOD13Q1")
+        .filterDate(s, e)
+        .select("NDVI")
+        .mean()
+        .multiply(0.0001)
+        .clip(aoi)
+    )
     vis = {"min": 0.0, "max": 0.8}
     return img, vis, "NDVI (Greenness)"
 
-def ee_wind_speed(month_date: date):
+
+def ee_wind_speed(month_date: date, aoi: ee.Geometry):
     s, e = month_range(month_date)
-    uv = (ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
-          .filterDate(s, e)
-          .select(["u_component_of_wind_10m", "v_component_of_wind_10m"])
-          .mean())
+    uv = (
+        ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
+        .filterDate(s, e)
+        .select(["u_component_of_wind_10m", "v_component_of_wind_10m"])
+        .mean()
+    )
     u = uv.select("u_component_of_wind_10m")
     v = uv.select("v_component_of_wind_10m")
-    speed = u.pow(2).add(v.pow(2)).sqrt().rename("wind_speed").clip(LAHORE)
+    speed = u.pow(2).add(v.pow(2)).sqrt().rename("wind_speed").clip(aoi)
     vis = {"min": 0, "max": 8}
     return speed, vis, "Wind speed (10m)"
 
-def ee_wind_dir(month_date: date):
+
+def ee_wind_dir(month_date: date, aoi: ee.Geometry):
     s, e = month_range(month_date)
-    uv = (ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
-          .filterDate(s, e)
-          .select(["u_component_of_wind_10m", "v_component_of_wind_10m"])
-          .mean())
+    uv = (
+        ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
+        .filterDate(s, e)
+        .select(["u_component_of_wind_10m", "v_component_of_wind_10m"])
+        .mean()
+    )
     u = uv.select("u_component_of_wind_10m")
     v = uv.select("v_component_of_wind_10m")
-    # direction = atan2(u, v) degrees normalized
-    dir_deg = u.atan2(v).multiply(180 / 3.141592653589793).add(360).mod(360).rename("wind_dir").clip(LAHORE)
+    dir_deg = (
+        u.atan2(v)
+        .multiply(180 / 3.141592653589793)
+        .add(360)
+        .mod(360)
+        .rename("wind_dir")
+        .clip(aoi)
+    )
     vis = {"min": 0, "max": 360}
     return dir_deg, vis, "Wind direction (deg)"
 
-def ee_fires(month_date: date):
-    s, e = month_range(month_date)
-    fires_fc = (ee.FeatureCollection("MODIS/061/MCD14ML")
-                .filterDate(s, e)
-                .filterBounds(LAHORE))
-    painted = ee.Image().byte().paint(fires_fc, 1).clip(LAHORE)
-    vis = {"min": 0, "max": 1}
-    return painted, vis, "Fire detections"
 
+def ee_fires(month_date: date, aoi: ee.Geometry):
+    s, e = month_range(month_date)
+    fires = ee.ImageCollection("FIRMS").filterDate(s, e)
+    fire_sum = fires.select("T21").sum().clip(aoi)
+    vis = {"min": 0, "max": 50}  # adjust if washed out/saturated
+    return fire_sum, vis, "Fires (FIRMS T21 monthly sum)"
+
+
+# Static chart builders
+
+def chart_line(df, ycol, ytitle, title):
+    return (
+        alt.Chart(df)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", title="Month"),
+            y=alt.Y(f"{ycol}:Q", title=ytitle),
+            tooltip=[alt.Tooltip("date:T"), alt.Tooltip(ycol)],
+        )
+        .properties(height=330, title=title)
+    )
+
+
+def chart_bar(df, ycol, ytitle, title):
+    return (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X("date:T", title="Month"),
+            y=alt.Y(f"{ycol}:Q", title=ytitle),
+            tooltip=[alt.Tooltip("date:T"), alt.Tooltip(ycol)],
+        )
+        .properties(height=330, title=title)
+    )
 
 
 # UI
@@ -135,43 +201,24 @@ if not os.path.exists(PANEL_PATH):
 
 df = load_panel(PANEL_PATH)
 
-# Main dropdown determines what to show
 view = st.selectbox(
-    "Choose what to display",
+    "Select view",
     [
         "Static: AQI & Traffic (Nightlights)",
         "Static: Greenness (NDVI) & Fires",
-        "Static: Wind & Fires vs PM2.5",
-        "Interactive: Nightlights map (monthly slider)",
-        "Interactive: Greenness map (NDVI) (monthly slider)",
-        "Interactive: Wind speed map (monthly slider)",
-        "Interactive: Wind direction map (monthly slider)",
-        "Interactive: Fires map (monthly slider)",
+        "Static: Wind & PM2.5",
+        "Interactive: Nightlights map",
+        "Interactive: Greenness (NDVI) map",
+        "Interactive: Wind speed map",
+        "Interactive: Wind direction map",
+        "Interactive: Fires map",
     ],
 )
 
 st.divider()
 
 
-def chart_line(df, ycol, ytitle, title):
-    return (alt.Chart(df)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title="Month"),
-                y=alt.Y(f"{ycol}:Q", title=ytitle),
-                tooltip=[alt.Tooltip("date:T"), alt.Tooltip(ycol)]
-            )
-            .properties(height=330, title=title))
-
-def chart_bar(df, ycol, ytitle, title):
-    return (alt.Chart(df)
-            .mark_bar()
-            .encode(
-                x=alt.X("date:T", title="Month"),
-                y=alt.Y(f"{ycol}:Q", title=ytitle),
-                tooltip=[alt.Tooltip("date:T"), alt.Tooltip(ycol)]
-            )
-            .properties(height=330, title=title))
+# Static views
 
 if view.startswith("Static:"):
     c1, c2 = st.columns(2)
@@ -180,117 +227,108 @@ if view.startswith("Static:"):
         with c1:
             st.altair_chart(
                 chart_line(df, "pm25_mean", "PM2.5 (µg/m³)", "Monthly PM2.5 (Lahore)"),
-                use_container_width=True
+                use_container_width=True,
             )
         with c2:
             st.altair_chart(
-                chart_line(df, "nightlights_avg_rad_mean", "VIIRS avg radiance", "Traffic/activity proxy (Nightlights)"),
-                use_container_width=True
+                chart_line(
+                    df,
+                    "nightlights_avg_rad_mean",
+                    "VIIRS avg radiance",
+                    "Traffic/activity proxy (Nightlights)",
+                ),
+                use_container_width=True,
             )
 
     elif view == "Static: Greenness (NDVI) & Fires":
         with c1:
             st.altair_chart(
                 chart_line(df, "ndvi_mean", "NDVI", "Urban greenness (NDVI)"),
-                use_container_width=True
+                use_container_width=True,
             )
         with c2:
-            st.altair_chart(
-                chart_bar(df, "fire_detections_count", "Detections", "Fire detections (monthly)"),
-                use_container_width=True
-            )
+            if "fire_detections_count" in df.columns:
+                st.altair_chart(
+                    chart_bar(df, "fire_detections_count", "T21 sum", "Fire intensity proxy (monthly)"),
+                    use_container_width=True,
+                )
+            else:
+                st.warning("fire_detections_count not found in lahore_monthly_panel.csv")
 
-    elif view == "Static: Wind & Fires vs PM2.5":
-        # Keep it simple: show wind speed, wind direction, PM2.5, and fires
+    elif view == "Static: Wind & PM2.5":
         with c1:
-            st.altair_chart(
-                chart_line(df, "wind_speed_mean", "m/s", "Mean wind speed (monthly)"),
-                use_container_width=True
-            )
+            if "wind_speed_mean" in df.columns:
+                st.altair_chart(
+                    chart_line(df, "wind_speed_mean", "m/s", "Mean wind speed (monthly)"),
+                    use_container_width=True,
+                )
+            else:
+                st.warning("wind_speed_mean not found in lahore_monthly_panel.csv")
         with c2:
-            st.altair_chart(
-                chart_line(df, "wind_dir_deg_mean", "degrees", "Mean wind direction (monthly)"),
-                use_container_width=True
-            )
-
-        c3, c4 = st.columns(2)
-        with c3:
             st.altair_chart(
                 chart_line(df, "pm25_mean", "PM2.5 (µg/m³)", "Monthly PM2.5 (Lahore)"),
-                use_container_width=True
-            )
-        with c4:
-            st.altair_chart(
-                chart_bar(df, "fire_detections_count", "Detections", "Fire detections (monthly)"),
-                use_container_width=True
+                use_container_width=True,
             )
 
 
-
-# Interactive views (EE maps)
+# Interactive views (folium + EE tiles)
 
 else:
-    ee_init()
+    # Initialize EE and get AOI only here (avoids EE init errors on import)
+    LAHORE_AOI = ee_setup()
 
-    # month slider
     month_idx = st.slider("Month", 0, len(MONTHS) - 1, len(MONTHS) - 1)
     month_date = MONTHS[month_idx]
     month_ts = pd.Timestamp(month_date.isoformat())
 
-    # KPIs for selected month from panel
-    kpi = kpi_row(df, month_ts)
+    opacity = st.slider("Layer opacity", 0.0, 1.0, 0.8, 0.05)
+
+    fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
+
+    if view == "Interactive: Nightlights map":
+        img, vis, name = ee_nightlights(month_date, LAHORE_AOI)
+        add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+
+    elif view == "Interactive: Greenness (NDVI) map":
+        img, vis, name = ee_ndvi(month_date, LAHORE_AOI)
+        add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+
+    elif view == "Interactive: Wind speed map":
+        img, vis, name = ee_wind_speed(month_date, LAHORE_AOI)
+        add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+
+    elif view == "Interactive: Wind direction map":
+        img, vis, name = ee_wind_dir(month_date, LAHORE_AOI)
+        add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+
+    elif view == "Interactive: Fires map":
+        img, vis, name = ee_fires(month_date, LAHORE_AOI)
+        add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+
+    # AOI outline rectangle
+    xmin, ymin, xmax, ymax = LAHORE_BBOX
+    folium.Rectangle(bounds=[[ymin, xmin], [ymax, xmax]], color="black", weight=2, fill=False).add_to(fmap)
+
+    folium.LayerControl(collapsed=False).add_to(fmap)
 
     left, right = st.columns([2, 1])
 
     with left:
-        m = geemap.Map(center=[31.52, 74.35], zoom=10)
-
-        if view == "Interactive: Nightlights map (monthly slider)":
-            img, vis, name = ee_nightlights(month_date)
-        elif view == "Interactive: Greenness map (NDVI) (monthly slider)":
-            img, vis, name = ee_ndvi(month_date)
-        elif view == "Interactive: Wind speed map (monthly slider)":
-            img, vis, name = ee_wind_speed(month_date)
-        elif view == "Interactive: Wind direction map (monthly slider)":
-            img, vis, name = ee_wind_dir(month_date)
-        elif view == "Interactive: Fires map (monthly slider)":
-            img, vis, name = ee_fires(month_date)
-        else:
-            img, vis, name = ee_nightlights(month_date)
-
-        opacity = st.slider("Layer opacity", 0.0, 1.0, 0.8, 0.05)
-
-        m.addLayer(img, vis, name, shown=True, opacity=opacity)
-        m.addLayer(LAHORE, {}, "Lahore AOI", shown=True)
-
-        st_folium(m, width=1000, height=650)
-
-        st.caption(f"Selected month: {month_date.strftime('%Y-%m')}")
+        st_folium(fmap, width=1000, height=650)
 
     with right:
         st.subheader("Selected month summary")
+        kpi = kpi_row(df, month_ts)
 
         if kpi is None:
-            st.write("No panel row found for this month (check your merge).")
+            st.write("No row found for this month in the panel dataset.")
         else:
             st.metric("PM2.5 (monthly mean)", f"{kpi.get('pm25_mean', float('nan')):.2f}")
             st.metric("Nightlights (avg radiance)", f"{kpi.get('nightlights_avg_rad_mean', float('nan')):.2f}")
             st.metric("NDVI (mean)", f"{kpi.get('ndvi_mean', float('nan')):.3f}")
-            st.metric("Fire detections", f"{int(kpi.get('fire_detections_count', 0))}")
+            if "fire_detections_count" in kpi:
+                st.metric("Fire intensity proxy", f"{kpi.get('fire_detections_count', float('nan')):.2f}")
             st.metric("Wind speed (mean)", f"{kpi.get('wind_speed_mean', float('nan')):.2f}")
             st.metric("Wind dir (mean)", f"{kpi.get('wind_dir_deg_mean', float('nan')):.1f}")
 
-        st.divider()
-        st.subheader("Quick context")
-
-        # Tiny trend snippet around the selected month
-        window = df[(df["date"] >= month_ts - pd.offsets.MonthBegin(6)) &
-                    (df["date"] <= month_ts + pd.offsets.MonthBegin(6))].copy()
-
-        if not window.empty:
-            mini = alt.Chart(window).mark_line().encode(
-                x="date:T",
-                y=alt.Y("pm25_mean:Q", title="PM2.5"),
-                tooltip=["date:T", "pm25_mean:Q"]
-            ).properties(height=220, title="PM2.5 around selected month")
-            st.altair_chart(mini, use_container_width=True)
+        st.caption(f"Selected month: {month_date.strftime('%Y-%m')}")

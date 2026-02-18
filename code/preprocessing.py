@@ -200,24 +200,30 @@ def extract_wind_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
 
 
-def extract_fires_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
-    """
-    MODIS fire detections -> monthly count within AOI.
-    Dataset: MODIS/061/MCD14ML (FeatureCollection)
-    """
-    fires_fc = (ee.FeatureCollection("MODIS/061/MCD14ML")
-                .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
-                .filterBounds(aoi))
+def extract_fires_monthly(aoi, months):
 
-    def one_month(d: date) -> ee.Feature:
+    # NASA FIRMS VIIRS fire detections (public + stable)
+    fires = ee.ImageCollection("FIRMS").filterDate("2019-01-01", "2024-01-01")
+
+    def one_month(d):
         mstart = ee.Date(d.isoformat())
         mend = mstart.advance(1, "month")
 
-        count = fires_fc.filterDate(mstart, mend).size()
+        monthly = fires.filterDate(mstart, mend)
+
+        # count fire pixels
+        count_img = monthly.select("T21").sum()
+
+        stats = count_img.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=aoi,
+            scale=1000,
+            maxPixels=1e13
+        )
 
         return ee.Feature(None, {
             "date": mstart.format("YYYY-MM-dd"),
-            "fire_detections_count": count
+            "fire_detections_count": stats.get("T21")
         })
 
     fc = ee.FeatureCollection([one_month(d) for d in months])

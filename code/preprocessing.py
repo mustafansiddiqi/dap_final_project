@@ -20,15 +20,13 @@ PANEL_OUT = os.path.join(DATA_DIR, "lahore_monthly_panel.csv")
 
 # TIME WINDOW
 
-
 START_DATE = date(2019, 1, 1)
 END_EXCL   = date(2024, 1, 1) 
 
 
 
-# AOI (Lahore bounding box placeholder)
+# AOI (Lahore bounding box)
 
-# [xmin, ymin, xmax, ymax] in lon/lat
 LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
 
 
@@ -51,10 +49,6 @@ def lahore_geometry() -> ee.Geometry:
 
 
 def to_df_from_featurecollection(fc: ee.FeatureCollection) -> pd.DataFrame:
-    """
-    Convert a small ee.FeatureCollection (monthly rows; ~60) to pandas DataFrame.
-    Uses getInfo(), which is OK for small outputs.
-    """
     info = fc.getInfo()
     feats = info.get("features", [])
     rows = [f.get("properties", {}) for f in feats]
@@ -62,37 +56,22 @@ def to_df_from_featurecollection(fc: ee.FeatureCollection) -> pd.DataFrame:
 
 
 def wind_dir_from_uv(u: ee.Image, v: ee.Image) -> ee.Image:
-    """
-    Wind direction (degrees, 0..360), computed as:
-      dir = atan2(u, v) * 180/pi, normalized to [0, 360)
-
-    Note: meteorological conventions can differ; this is consistent and works for directional indicators.
-    """
     dir_deg = u.atan2(v).multiply(180.0 / 3.141592653589793)
     dir_deg = dir_deg.add(360).mod(360)
     return dir_deg.rename("wind_dir_deg")
 
 
 def ee_init() -> None:
-    """
-    Initialize Earth Engine. If not authenticated, it will prompt.
-    """
     try:
         ee.Initialize()
     except Exception:
         ee.Authenticate()
         ee.Initialize()
 
-
-
-# EARTH ENGINE EXTRACTS (MONTHLY)
-
+# EARTH ENGINE EXTRACTS
 
 def extract_viirs_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
-    """
-    VIIRS nightlights monthly mean radiance over AOI.
-    Dataset: NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG, band: avg_rad
-    """
+
     viirs = (ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG")
              .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
              .select("avg_rad"))
@@ -105,7 +84,7 @@ def extract_viirs_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
         stats = img.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=aoi,
-            scale=500,        # VIIRS ~500m
+            scale=500,
             maxPixels=1e13
         )
 
@@ -121,10 +100,7 @@ def extract_viirs_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
 
 
 def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
-    """
-    MODIS NDVI monthly mean over AOI.
-    Dataset: MODIS/061/MOD13Q1, band: NDVI (scaled by 0.0001)
-    """
+    
     modis = (ee.ImageCollection("MODIS/061/MOD13Q1")
              .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
              .select("NDVI"))
@@ -138,7 +114,7 @@ def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
         stats = img.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=aoi,
-            scale=250,        # MOD13Q1 ~250m
+            scale=250,
             maxPixels=1e13
         )
 
@@ -154,11 +130,7 @@ def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
 
 
 def extract_wind_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
-    """
-    ERA5-Land hourly -> monthly mean wind speed and direction over AOI.
-    Dataset: ECMWF/ERA5_LAND/HOURLY
-    Bands: u_component_of_wind_10m, v_component_of_wind_10m
-    """
+
     era5 = (ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
             .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
             .select(["u_component_of_wind_10m", "v_component_of_wind_10m"]))
@@ -177,7 +149,7 @@ def extract_wind_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
         speed_stats = speed.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=aoi,
-            scale=10000,      # ERA5-Land ~9km; use ~10km
+            scale=10000,
             maxPixels=1e13
         )
 
@@ -203,7 +175,7 @@ def extract_wind_monthly(aoi: ee.Geometry, months: list[date]) -> pd.DataFrame:
 def extract_fires_monthly(aoi, months):
 
     # NASA FIRMS VIIRS fire detections (public + stable)
-    fires = ee.ImageCollection("FIRMS").filterDate("2019-01-01", "2024-01-01")
+    fires = ee.ImageCollection("FIRMS").filterDate("2019-01-01", "2025-01-01")
 
     def one_month(d):
         mstart = ee.Date(d.isoformat())
@@ -233,17 +205,10 @@ def extract_fires_monthly(aoi, months):
 
 
 
-# AQI: HOURLY -> MONTHLY
+# AQI:
 
 
 def load_aqi_hourly_to_monthly(aqi_path: str) -> pd.DataFrame:
-    """
-    Your uploaded AQI file columns are:
-      timestamp_utc, pm25_ugm3, station_name, latitude, longitude
-
-    This aggregates to monthly mean PM2.5 across all stations & hours.
-    Output columns: date (month start), pm25_mean
-    """
     df = pd.read_csv(aqi_path)
 
     if "timestamp_utc" not in df.columns or "pm25_ugm3" not in df.columns:
@@ -253,7 +218,7 @@ def load_aqi_hourly_to_monthly(aqi_path: str) -> pd.DataFrame:
     df = df.dropna(subset=["timestamp_utc"])
 
     # keep only 2019–2023 inclusive
-    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2024-01-01")].copy()
+    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2025-01-01")].copy()
 
     df["year"] = df["timestamp_utc"].dt.year
     df["month"] = df["timestamp_utc"].dt.month

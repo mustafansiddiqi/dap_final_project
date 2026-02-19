@@ -11,9 +11,9 @@ import folium
 from streamlit_folium import st_folium
 import branca.colormap as cm
 
-# -----------------------------
+
 # Paths
-# -----------------------------
+
 APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent  # app.py in /code
 DATA_DIR = REPO_ROOT / "data"
@@ -30,9 +30,9 @@ LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]  # [xmin, ymin, xmax, ymax]
 START = date(2019, 1, 1)
 END_EXCL = date(2024, 1, 1)
 
-# -----------------------------
+
 # EE setup
-# -----------------------------
+
 @st.cache_resource
 def ee_setup():
     try:
@@ -58,9 +58,9 @@ def month_range(d: date):
     e = s.advance(1, "month")
     return s, e
 
-# -----------------------------
+
 # Data loading
-# -----------------------------
+
 @st.cache_data
 def load_panel(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -130,9 +130,9 @@ def load_gasoline_yearly(path: Path) -> pd.DataFrame | None:
         return None
     return pd.DataFrame(rows).sort_values("year").reset_index(drop=True)
 
-# -----------------------------
+
 # EE layers
-# -----------------------------
+
 def add_ee_tile_layer(fmap: folium.Map, ee_image: ee.Image, vis_params: dict, name: str, opacity: float = 0.8):
     map_id_dict = ee_image.getMapId(vis_params)
     folium.TileLayer(
@@ -191,9 +191,9 @@ def ee_fires(month_date: date, aoi: ee.Geometry):
     fire_sum = fires.select("T21").sum().clip(aoi)
     return fire_sum, {"min": 0, "max": 50}, "Fires (FIRMS T21 monthly sum)"
 
-# -----------------------------
+
 # Altair charts
-# -----------------------------
+
 def normalize_to_2019_index(df: pd.DataFrame, col: str) -> pd.Series:
     base = df[df["date"].dt.year == 2019][col].mean()
     if pd.isna(base) or base == 0:
@@ -346,9 +346,9 @@ def gasoline_bar_vs_aqi_line(panel: pd.DataFrame, gas_yearly: pd.DataFrame, annu
     )
     return layered
 
-# -----------------------------
+
 # UI
-# -----------------------------
+
 st.set_page_config(page_title="Lahore Air Quality Decomposition", layout="wide")
 st.title("Lahore Air Quality Decomposition (2019–2024)")
 
@@ -360,9 +360,9 @@ panel = load_panel(PANEL_PATH)
 
 static_tab, interactive_tab = st.tabs(["Static visuals (Altair)", "Interactive maps"])
 
-# -----------------------------
+
 # TAB 1: Static
-# -----------------------------
+
 with static_tab:
     view_static = st.radio(
         "Choose a static view",
@@ -420,9 +420,9 @@ with static_tab:
         else:
             st.caption("PAQI file not found; line shows annual mean PM2.5 instead of AQI.")
 
-# -----------------------------
+
 # TAB 2: Interactive
-# -----------------------------
+
 with interactive_tab:
     view_interactive = st.radio(
         "Choose an interactive map",

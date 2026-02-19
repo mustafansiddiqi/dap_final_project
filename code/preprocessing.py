@@ -16,6 +16,8 @@ FIRE_OUT  = os.path.join(DATA_DIR, "lahore_fires_monthly_2019_2023.csv")
 
 PANEL_OUT = os.path.join(DATA_DIR, "lahore_monthly_panel.csv")
 
+#GASOLINE_PATH = os.path.join(DATA_DIR, "energy_institute_table.csv")
+
 
 
 # TIME WINDOW
@@ -233,7 +235,6 @@ def load_aqi_hourly_to_monthly(aqi_path: str) -> pd.DataFrame:
     return monthly
 
 
-
 # MAIN
 
 
@@ -278,6 +279,7 @@ def main() -> None:
              .merge(df_ndvi, on="date", how="left")
              .merge(df_wind, on="date", how="left")
              .merge(df_fire, on="date", how="left"))
+ 
 
     panel.to_csv(PANEL_OUT, index=False)
     print(f"Saved final panel: {PANEL_OUT}")

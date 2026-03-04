@@ -45,15 +45,15 @@ API_KEY = "48b8cf776845b1b3b76e183c60826568"
 # Keys must match vehicle_type in motor_vehicles_subset_tidy.csv
 
 EMISSIONS_G_PER_KM = {
-    "Motor Cars, Jeeps and Station Wagons": 180,
-    "Motor Cycles and Scooters": 70,
-    "Trucks": 900,
-    "Pick-ups / Delivery Vans": 400,
-    "Mini Buses/ Buses/ Flying/ Luxury Coaches": 1100,
-    "Taxis": 200,
-    "Auto Rickshaws": 250,
-    "Tractors": 1200,
-    "Other Vehicles": 300,
+    "Motor Cars, Jeeps and Station Wagons": 240,
+    "Motor Cycles and Scooters": 148,
+    "Trucks": 1800,
+    "Pick-ups / Delivery Vans": 1350,
+    "Mini Buses/ Buses/ Flying/ Luxury Coaches": 2127,
+    "Taxis": 736,
+    "Auto Rickshaws": 530,
+    "Tractors": 1146,
+    "Other Vehicles": 240,
 }
 
 
@@ -357,12 +357,11 @@ if mv_tidy is not None and selected_regions:
             f"Sheikhupura = {shares['sheikhupura_share']:.2%}. "
             f"Punjab total vehicles = {shares['total_punjab']:,.0f}."
         )
-
+    
+    st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
     colA, colB = st.columns([1.15, 1.0], vertical_alignment="top")
 
     with colA:
-        st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
-
         sat_choice = st.radio(
             "Satellite trend to display",
             options=["Urban greenness (NDVI)", "Nightlights (VIIRS)"],
@@ -376,7 +375,7 @@ if mv_tidy is not None and selected_regions:
     with colB:
         st.altair_chart(vehicle_breakdown_chart(vsum), use_container_width=True)
         st.caption("Bar labels show: registered count | emissions factor.")
-
+     
 else:
     st.info("Vehicle data not available (or no regions selected).")
     sat_choice = st.radio(

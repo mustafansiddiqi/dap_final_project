@@ -60,13 +60,19 @@ EMISSIONS_G_PER_KM = {
 @st.cache_resource
 def ee_setup():
     try:
-        info = json.loads(st.secrets["earthengine"]["service_account_json"])
+        # 1) Streamlit Cloud / secrets.toml path
+        if "earthengine" in st.secrets and "service_account_json" in st.secrets["earthengine"]:
+            info = json.loads(st.secrets["earthengine"]["service_account_json"])
+
+        # 2) Local dev: read JSON file checked out locally (NOT committed)
+        else:
+            key_path = REPO_ROOT / ".streamlit" / "ee_key.json"
+            info = json.loads(key_path.read_text())
 
         creds = service_account.Credentials.from_service_account_info(
             info,
             scopes=["https://www.googleapis.com/auth/earthengine"],
         )
-
         ee.Initialize(creds)
 
     except Exception as e:

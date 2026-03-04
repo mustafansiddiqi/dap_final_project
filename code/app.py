@@ -18,6 +18,10 @@ from geopy.geocoders import Nominatim
 
 # Paths
 
+
+
+# Paths
+
 APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -617,6 +621,7 @@ def fetch_aqi(lat, lon, mode="current", start=None, end=None):
         return r.json().get("list", [])
     return []
 
+aoi = ee_setup()
 
 st.subheader("My Location")
 

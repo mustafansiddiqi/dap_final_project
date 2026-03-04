@@ -75,6 +75,14 @@ def ee_setup():
 
     return ee.Geometry.Rectangle(LAHORE_BBOX)
 
+def month_list():
+    months = []
+    cur = START
+    while cur < END_EXCL:
+        months.append(cur)
+        # advance 1 month safely
+        cur = (cur.replace(day=1) + relativedelta(months=1))
+    return months
 
 MONTHS = month_list()
 

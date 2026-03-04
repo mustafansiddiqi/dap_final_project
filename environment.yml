@@ -16,3 +16,4 @@ dependencies:
   - pip:
       - earthengine-api
       - streamlit-folium
+      - google-auth

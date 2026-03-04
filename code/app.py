@@ -8,7 +8,9 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 
+import json
 import ee
+from google.oauth2 import service_account
 import folium
 from streamlit_folium import st_folium
 import branca.colormap as cm
@@ -58,18 +60,14 @@ EMISSIONS_G_PER_KM = {
 @st.cache_resource
 def ee_setup():
     try:
-        if "earthengine" in st.secrets:
-            client_email = st.secrets["earthengine"]["client_email"]
-            private_key = st.secrets["earthengine"]["private_key"]
+        info = json.loads(st.secrets["earthengine"]["service_account_json"])
 
-            creds = ee.ServiceAccountCredentials(
-                client_email=client_email,
-                key_data=private_key,
-            )
-            ee.Initialize(creds)
-        else:
-            # local dev (if you authenticated locally before)
-            ee.Initialize()
+        creds = service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/earthengine"],
+        )
+
+        ee.Initialize(creds)
 
     except Exception as e:
         st.error(f"Earth Engine initialization failed: {e}")

@@ -258,7 +258,7 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
                 alt.Tooltip("total_emissions:Q", title="Total emissions (count×g/km)", format=",.0f"),
             ],
         )
-        .properties(height=420, title="Vehicle breakdown (counts) with emissions labels")
+        .properties(height=420, title="Vehicle breakdown with emissions labels")
     )
 
     bars = base.mark_bar()
@@ -416,7 +416,7 @@ selected_month_date = st.select_slider(
     format_func=lambda d: d.strftime("%Y-%m"),
 )
 
-opacity = st.slider("Layer opacity (satellite only)", 0.0, 1.0, 0.85, 0.05)
+opacity = 0.85
 
 fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
 

@@ -377,7 +377,7 @@ if mv_tidy is not None and selected_regions:
 
     with colB:
         st.altair_chart(vehicle_breakdown_chart(vsum), use_container_width=True)
-        st.caption("Bar labels show: registered count | emissions factor (manual). Edit EMISSIONS_G_PER_KM in code to change.")
+        st.caption("Bar labels show: registered count | emissions factor (manual).")
 
 else:
     st.info("Vehicle data not available (or no regions selected).")
@@ -400,7 +400,6 @@ def blue_to_red_colormap(vmin: float, vmax: float):
         vmin=vmin,
         vmax=vmax,
     )
-
 
 # Interactive map section
 

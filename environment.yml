@@ -1,9 +1,18 @@
-name: air_quality_analysis
+name: dap_final_project
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.11
   - pandas
-  - geopandas
-  - matplotlib
-  - shapely
+  - altair
+  - streamlit
+  - folium
+  - branca
+  - geopy
+  - requests
+  - python-dateutil
+  - pip
+  - pip:
+      - earthengine-api
+      - streamlit-folium

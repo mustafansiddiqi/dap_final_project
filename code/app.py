@@ -26,9 +26,9 @@ PANEL_PATH = DATA_DIR / "lahore_monthly_panel.csv"
 PAQI_PATH = DATA_DIR / "PAQI_lahore_hourly_pm25_2019_2024.csv"
 MOTOR_TIDY_PATH = DATA_DIR / "motor_vehicles_subset_tidy.csv"
 MOTOR_RAW_PATH = DATA_DIR / "motor-vehicles-registered-by-type-division-and-district-the-punjab-uptil-2021.csv"
-ENERGY_PATH = DATA_DIR / "energy_institute_table.csv"  # Pakistan gasoline consumption kb/d
+ENERGY_PATH = DATA_DIR / "energy_institute_table.csv"
 
-LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]  # [xmin, ymin, xmax, ymax]
+LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
 
 START = date(2019, 1, 1)
 END_EXCL = date(2025, 1, 1)
@@ -53,25 +53,29 @@ EMISSIONS_G_PER_KM = {
     "Other Vehicles": 300,
 }
 
-# Earth Engine setup
+# Earth  Engine setup
 
 @st.cache_resource
 def ee_setup():
     try:
-        ee.Initialize()
-    except Exception:
-        ee.Authenticate()
-        ee.Initialize()
+        if "earthengine" in st.secrets:
+            client_email = st.secrets["earthengine"]["client_email"]
+            private_key = st.secrets["earthengine"]["private_key"]
+
+            creds = ee.ServiceAccountCredentials(
+                client_email=client_email,
+                key_data=private_key,
+            )
+            ee.Initialize(creds)
+        else:
+            # local dev (if you authenticated locally before)
+            ee.Initialize()
+
+    except Exception as e:
+        st.error(f"Earth Engine initialization failed: {e}")
+        st.stop()
+
     return ee.Geometry.Rectangle(LAHORE_BBOX)
-
-
-def month_list(start=START, end_excl=END_EXCL):
-    out = []
-    cur = date(start.year, start.month, 1)
-    while cur < end_excl:
-        out.append(cur)
-        cur = (cur + relativedelta(months=1)).replace(day=1)
-    return out
 
 
 MONTHS = month_list()

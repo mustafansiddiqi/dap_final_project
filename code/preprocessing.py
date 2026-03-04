@@ -162,7 +162,7 @@ def save_satellite_pngs(aoi: ee.Geometry, months: list[date]):
     for d in months:
         yyyymm = f"{d.year}{d.month:02d}"
 
-        # ---- VIIRS ----
+        #  VIIRS 
         viirs_path = VIIRS_IMG_DIR / f"viirs_{yyyymm}.png"
         if not viirs_path.exists():
             mstart = ee.Date(d.isoformat())
@@ -184,7 +184,7 @@ def save_satellite_pngs(aoi: ee.Geometry, months: list[date]):
             r.raise_for_status()
             viirs_path.write_bytes(r.content)
 
-        # ---- NDVI ----
+        #  NDVI 
         ndvi_path = NDVI_IMG_DIR / f"ndvi_{yyyymm}.png"
         if not ndvi_path.exists():
             mstart = ee.Date(d.isoformat())
@@ -274,7 +274,6 @@ def main():
     aoi = lahore_geometry()
     months = month_starts(START_DATE, END_EXCL)
 
-    # NEW: save satellite PNGs for the app to use
     print("Saving satellite PNGs (VIIRS + NDVI) into /data/satellite_images ...")
     save_satellite_pngs(aoi, months)
 

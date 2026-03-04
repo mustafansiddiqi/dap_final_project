@@ -1,0 +1,10 @@
+streamlit
+pandas
+altair
+earthengine-api
+folium
+streamlit-folium
+branca
+geopy
+python-dateutil
+requests

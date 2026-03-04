@@ -359,7 +359,7 @@ if mv_tidy is not None and selected_regions:
         )
     
     st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
-    colA, colB = st.columns([1.15, 1.0], vertical_alignment="top")
+    colA, colB = st.columns([1.0, 1.5], vertical_alignment="bottom")
 
     with colA:
         sat_choice = st.radio(

@@ -1,8 +1,6 @@
 streamlit
 pandas
 altair
-earthengine-api
-google-auth
 folium
 streamlit-folium
 branca

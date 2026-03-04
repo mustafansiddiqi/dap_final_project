@@ -30,7 +30,7 @@ NDVI_IMG_DIR = SAT_IMG_DIR / "ndvi"
 # Time window + AOI
 
 START_DATE = date(2019, 1, 1)
-END_EXCL = date(2024, 1, 1)
+END_EXCL = date(2025, 1, 1)
 
 LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
 

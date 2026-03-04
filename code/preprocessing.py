@@ -1,11 +1,10 @@
 import os
 from datetime import date
 from dateutil.relativedelta import relativedelta
-
 import pandas as pd
 import ee
 
-DATA_DIR = "/Users/mustafa/Mustafa_Mac/UChicago/Year 2/Winter 2026/DAP2/Final Project/dap_final_project/data"
+DATA_DIR = "/Users/khushanshahad/GitHub/dap_final_project/data"
 
 AQI_PATH = os.path.join(DATA_DIR, "PAQI_lahore_hourly_pm25_2019_2024.csv")
 
@@ -63,7 +62,7 @@ def wind_dir_from_uv(u: ee.Image, v: ee.Image) -> ee.Image:
 
 def ee_init() -> None:
     try:
-        ee.Initialize()
+        ee.Initialize(project='test-project-486602')
     except Exception:
         ee.Authenticate()
         ee.Initialize()

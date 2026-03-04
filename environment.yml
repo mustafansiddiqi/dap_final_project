@@ -1,9 +1,9 @@
 name: dap_final_project
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11
+  - pip
   - pandas
   - altair
   - streamlit
@@ -12,8 +12,7 @@ dependencies:
   - geopy
   - requests
   - python-dateutil
-  - pip
   - pip:
       - earthengine-api
-      - streamlit-folium
       - google-auth
+      - streamlit-folium

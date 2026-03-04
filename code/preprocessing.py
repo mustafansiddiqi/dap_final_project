@@ -51,7 +51,7 @@ def ee_init():
         ee.Initialize()
 
 
-def to_df_from_featurecollection(fc: ee.FeatureCollection) -> pd.DataFrame:
+def to_df_from_featurecollection(fc: ee.FeatureCollection) :
     info = fc.getInfo()
     feats = info.get("features", [])
     rows = [f.get("properties", {}) for f in feats]
@@ -61,7 +61,7 @@ def to_df_from_featurecollection(fc: ee.FeatureCollection) -> pd.DataFrame:
 
 # AQI: hourly to monthly mean
 
-def load_aqi_hourly_to_monthly(aqi_path: Path) -> pd.DataFrame:
+def load_aqi_hourly_to_monthly(aqi_path: Path) :
     df = pd.read_csv(aqi_path)
 
     if "timestamp_utc" not in df.columns or "pm25_ugm3" not in df.columns:
@@ -87,7 +87,7 @@ def extract_viirs_monthly(aoi: ee.Geometry, months: list[date]):
         .select("avg_rad")
     )
 
-    def one_month(d: date) -> ee.Feature:
+    def one_month(d: date):
         mstart = ee.Date(d.isoformat())
         mend = mstart.advance(1, "month")
         img = viirs.filterDate(mstart, mend).mean()
@@ -114,7 +114,7 @@ def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]):
         .select("NDVI")
     )
 
-    def one_month(d: date) -> ee.Feature:
+    def one_month(d: date):
         mstart = ee.Date(d.isoformat())
         mend = mstart.advance(1, "month")
 
@@ -161,7 +161,7 @@ def tidy_motor_vehicles(mv_path: Path):
     sub = mv[mv[region_col].isin(keep_regions)].copy()
 
     # merge Lahore + Lahore Divn.
-    def map_region(r: str) -> str:
+    def map_region(r: str):
         if r in {"Lahore", "Lahore Divn."}:
             return "Lahore (incl. Divn.)"
         return r

@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 from pathlib import Path
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import calendar
+import requests
 
 import pandas as pd
 import altair as alt
@@ -13,6 +12,7 @@ import ee
 import folium
 from streamlit_folium import st_folium
 import branca.colormap as cm
+from geopy.geocoders import Nominatim
 
 
 
@@ -31,7 +31,9 @@ ENERGY_PATH = DATA_DIR / "energy_institute_table.csv"  # Pakistan gasoline consu
 LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]  # [xmin, ymin, xmax, ymax]
 
 START = date(2019, 1, 1)
-END_EXCL = date(2024, 1, 1)
+END_EXCL = date(2025, 1, 1)
+
+API_KEY = "48b8cf776845b1b3b76e183c60826568"
 
 
 
@@ -132,15 +134,15 @@ LAYER_EXPLANATION_TREND = {
 # Data loading
 
 @st.cache_data
-def load_panel(path: Path) -> pd.DataFrame:
+def load_panel(path: Path):
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"])
-    df = df[(df["date"] >= "2019-01-01") & (df["date"] < "2024-01-01")].copy()
+    df = df[(df["date"] >= "2019-01-01") & (df["date"] < "2025-01-01")].copy()
     return df.sort_values("date").reset_index(drop=True)
 
 
 @st.cache_data
-def load_motor_tidy(path: Path) -> pd.DataFrame:
+def load_motor_tidy(path: Path):
     df = pd.read_csv(path)
     if not {"region", "vehicle_type", "count"}.issubset(df.columns):
         raise ValueError(f"Unexpected motor vehicles tidy columns: {df.columns.tolist()}")
@@ -148,15 +150,15 @@ def load_motor_tidy(path: Path) -> pd.DataFrame:
 
 
 @st.cache_data
-def load_paqi_station_monthly(path: Path) -> pd.DataFrame:
+def load_paqi_station_monthly(path: Path):
     
-    # Hourly PAQI -> station-level monthly mean PM2.5.
+    # Hourly PAQI to station-level monthly mean PM2.5.
     # Output: date (month start), station_name, latitude, longitude, pm25_mean
     
     df = pd.read_csv(path)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
     df = df.dropna(subset=["timestamp_utc", "pm25_ugm3", "latitude", "longitude"])
-    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2024-01-01")].copy()
+    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2025-01-01")].copy()
     df["date"] = df["timestamp_utc"].dt.to_period("M").dt.to_timestamp()
 
     out = (
@@ -166,7 +168,7 @@ def load_paqi_station_monthly(path: Path) -> pd.DataFrame:
     return out.sort_values(["date", "station_name"]).reset_index(drop=True)
 
 
-def clean_num(x) -> float:
+def clean_num(x):
     if pd.isna(x):
         return float("nan")
     s = str(x).replace(",", "").strip()
@@ -179,11 +181,11 @@ def clean_num(x) -> float:
 
 
 @st.cache_data
-def compute_region_shares_from_motor_raw(motor_raw_path: Path) -> dict:
+def compute_region_shares_from_motor_raw(motor_raw_path: Path):
     
     # Uses Total column to compute shares of total Punjab registered vehicles:
-    #   - Lahore (incl. Divn.) share
-    #   - Sheikhupura share
+    # Lahore (incl. Divn.) share
+    # Sheikhupura share
 
     mv = pd.read_csv(motor_raw_path)
     if "Division/ District" not in mv.columns or "Total" not in mv.columns:
@@ -205,10 +207,10 @@ def compute_region_shares_from_motor_raw(motor_raw_path: Path) -> dict:
 
 
 @st.cache_data
-def load_pakistan_gasoline_kbd(energy_path: Path) -> pd.DataFrame:
+def load_pakistan_gasoline_kbd(energy_path: Path):
     
     # energy_institute_table.csv format:
-    #   Region / Grouping, Units, 1980..2024
+    # Region / Grouping, Units, 1980..2025
     # We extract Pakistan Gasoline Consumption (kb/d) and return yearly series.
     
     ei = pd.read_csv(energy_path)
@@ -228,10 +230,10 @@ def load_pakistan_gasoline_kbd(energy_path: Path) -> pd.DataFrame:
     return long[["year", "kbd"]].sort_values("year").reset_index(drop=True)
 
 
-def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataFrame, lahore_share: float) -> pd.Series:
+def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataFrame, lahore_share: float):
 
     # Convert annual kb/d to monthly barrels:
-    #   kbd * 1000 (bbl/day) * days_in_month
+    # kbd * 1000 (bbl/day) * days_in_month
     # Then multiply by lahore_share to estimate Lahore barrels.
 
     yearly = energy_yearly.set_index("year")["kbd"].to_dict()
@@ -252,7 +254,7 @@ def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataF
 
 # Vehicle aggregation + metrics
 
-def vehicle_summary(mv_tidy: pd.DataFrame, selected_regions: list[str]) -> pd.DataFrame:
+def vehicle_summary(mv_tidy: pd.DataFrame, selected_regions: list[str]):
     df = mv_tidy[mv_tidy["region"].isin(selected_regions)].copy()
     df = df.groupby("vehicle_type", as_index=False)["count"].sum()
     df["emissions_g_per_km"] = df["vehicle_type"].map(EMISSIONS_G_PER_KM)
@@ -260,7 +262,7 @@ def vehicle_summary(mv_tidy: pd.DataFrame, selected_regions: list[str]) -> pd.Da
     return df.sort_values("count", ascending=False).reset_index(drop=True)
 
 
-def compute_vehicle_metrics(vsum: pd.DataFrame) -> dict:
+def compute_vehicle_metrics(vsum: pd.DataFrame):
     total_vehicles = float(vsum["count"].sum())
     valid = vsum.dropna(subset=["emissions_g_per_km"]).copy()
     weighted_avg = float((valid["count"] * valid["emissions_g_per_km"]).sum() / valid["count"].sum()) if valid["count"].sum() else float("nan")
@@ -271,7 +273,7 @@ def compute_vehicle_metrics(vsum: pd.DataFrame) -> dict:
 
 # Charts
 
-def pm25_with_fuel_bars(panel: pd.DataFrame) -> alt.Chart:
+def pm25_with_fuel_bars(panel: pd.DataFrame):
 
     # Bars: estimated Lahore gasoline barrels (legend + custom color + include AQI in tooltip)
     # Line: PM2.5
@@ -300,9 +302,10 @@ def pm25_with_fuel_bars(panel: pd.DataFrame) -> alt.Chart:
         ],
     )
 
-    line = base.mark_line().encode(
+    line = base.mark_area().encode(
         y=alt.Y("pm25_mean:Q", title="PM2.5 (µg/m³)"),
         tooltip=[alt.Tooltip("date:T", title="Month"), alt.Tooltip("pm25_mean:Q", title="PM2.5", format=".1f")],
+        opacity=alt.value(0.6), color = alt.value("#A87272")
     )
 
     return (
@@ -312,7 +315,7 @@ def pm25_with_fuel_bars(panel: pd.DataFrame) -> alt.Chart:
     )
 
 
-def vehicle_breakdown_chart(vsum: pd.DataFrame) -> alt.Chart:
+def vehicle_breakdown_chart(vsum: pd.DataFrame):
     vsum = vsum.copy()
     vsum["label"] = vsum.apply(
         lambda r: f"{r['count']:,.0f} | {int(r['emissions_g_per_km'])} g/km" if pd.notna(r["emissions_g_per_km"]) else f"{r['count']:,.0f} | N/A",
@@ -323,7 +326,7 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame) -> alt.Chart:
         alt.Chart(vsum)
         .encode(
             y=alt.Y("vehicle_type:N", sort="-x", title="Vehicle type"),
-            x=alt.X("count:Q", title="Registered vehicles (up to 2021)"),
+            x=alt.X("count:Q", title="Registered vehicles"),
             tooltip=[
                 alt.Tooltip("vehicle_type:N", title="Type"),
                 alt.Tooltip("count:Q", format=",.0f"),
@@ -339,7 +342,7 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame) -> alt.Chart:
     return bars + labels
 
 
-def satellite_trend_single(panel: pd.DataFrame, choice: str) -> alt.Chart:
+def satellite_trend_single(panel: pd.DataFrame, choice: str):
     
     # Single-series trend depending on choice:
     #   - NDVI: ndvi_mean
@@ -376,8 +379,8 @@ def satellite_trend_single(panel: pd.DataFrame, choice: str) -> alt.Chart:
 
 # App UI
 
-st.set_page_config(page_title="Lahore Air Quality + Vehicles + Satellite", layout="wide")
-st.title("Lahore: Air Quality, Vehicle Mix, Fuel Use (Estimated), and Satellite Indicators (2019–2024)")
+st.set_page_config(page_title="Decomposing Lahore Air Quality", layout="wide")
+st.title("Decomposing Lahore Air Quality from 2019–2024")
 
 if not PANEL_PATH.exists():
     st.error(f"Missing {PANEL_PATH}. Run preprocessing.py to generate it in /data.")
@@ -430,7 +433,6 @@ if mv_tidy is not None and selected_regions:
     with colA:
         st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
 
-        # satellite trend radio button + explainer (like earlier)
         sat_choice = st.radio(
             "Satellite trend to display",
             options=["Urban greenness (NDVI)", "Nightlights (VIIRS)"],
@@ -460,8 +462,7 @@ else:
 
 st.divider()
 
-def blue_to_red_colormap(vmin: float, vmax: float) -> cm.LinearColormap:
-    # dark blue -> light blue -> yellow -> orange -> red
+def blue_to_red_colormap(vmin: float, vmax: float):
     return cm.LinearColormap(
         colors=["#081d58", "#225ea8", "#41b6c4", "#ffffb2", "#fe9929", "#cc4c02", "#b10026"],
         vmin=vmin,
@@ -476,7 +477,7 @@ st.subheader("Interactive map: Air quality vs Nightlights vs Urban greenness")
 
 aoi = ee_setup()
 
-# 3-way selector (NOT overlay)
+# 3-way selector
 map_mode = st.radio(
     "Map mode",
     options=["Air quality (PAQI monitors)", "Nightlights (VIIRS)", "Urban greenness (NDVI)"],
@@ -503,7 +504,7 @@ folium.Rectangle(bounds=[[ymin, xmin], [ymax, xmax]], color="black", weight=2, f
 
 # fixed color scale for PAQI so months are comparable
 @st.cache_data
-def paqi_global_scale(paqi_df: pd.DataFrame) -> tuple[float, float]:
+def paqi_global_scale(paqi_df: pd.DataFrame):
     # use robust bounds so outliers don't wreck the scale
     q05 = float(paqi_df["pm25_mean"].quantile(0.05))
     q95 = float(paqi_df["pm25_mean"].quantile(0.95))
@@ -511,8 +512,8 @@ def paqi_global_scale(paqi_df: pd.DataFrame) -> tuple[float, float]:
         q95 = q05 + 1.0
     return q05, q95
 
-def blue_to_red_colormap(vmin: float, vmax: float) -> cm.LinearColormap:
-    # dark blue -> cyan -> yellow -> orange -> red
+def blue_to_red_colormap(vmin: float, vmax: float):
+    # dark blue to cyan to yellow to orange to red
     return cm.LinearColormap(
         colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
         vmin=vmin,
@@ -579,3 +580,66 @@ st_folium(
     height=650,
     key=f"map_{map_mode}_{selected_month_date.strftime('%Y%m')}_{opacity}",
 )
+
+pollutants = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
+selected_pollutants = st.multiselect("Select Pollutants", pollutants, default=["pm25"])
+
+def aqi_description(aqi):
+    return {
+        1: "Good",
+        2: "Fair",
+        3: "Moderate",
+        4: "Poor",
+        5: "Very Poor"
+    }.get(aqi, "Unknown")
+
+def extract_values(aqi_data, pollutant, mode):
+    #key = pollutant_key_map(pollutant)
+    if mode == "current":
+        if aqi_data:
+            return aqi_data[0]["components"].get(key)
+    else:
+        vals = [x["components"].get(key) for x in aqi_data if key in x["components"]]
+        vals = [v for v in vals if v is not None]
+        return sum(vals)/len(vals) if vals else None
+    return None
+
+@st.cache_data(ttl=900)
+def fetch_aqi(lat, lon, mode="current", start=None, end=None):
+    if mode == "forecast":
+        url = f"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={lat}&lon={lon}&appid={API_KEY}"
+    elif mode == "historic" and start and end:
+        url = f"http://api.openweathermap.org/data/2.5/air_pollution/history?lat={lat}&lon={lon}&start={start}&end={end}&appid={API_KEY}"
+    else:
+        url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+    r = requests.get(url)
+    if r.status_code == 200:
+        return r.json().get("list", [])
+    return []
+
+
+st.subheader("My Location")
+
+address = st.text_input("Enter your address or zip code:")
+
+if address:
+    geolocator = Nominatim(user_agent="aqi_chicago")
+    location = geolocator.geocode(address)
+
+    if location:
+        lat, lon = location.latitude, location.longitude
+        personal_data = fetch_aqi(lat, lon, "current")
+
+        if personal_data:
+            comp = personal_data[0]["components"]
+            aqi_index = personal_data[0]["main"]["aqi"]
+            aqi_label = aqi_description(aqi_index)
+
+            # Main summary sentence
+            st.markdown(
+                f"### The air quality in your area is **{aqi_label}** (AQI Index: {aqi_index})."
+            )
+        else:
+            st.warning("No AQI data available for this location.")
+    else:
+        st.warning("Address not found.")

@@ -235,7 +235,7 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
     return (
         alt.layer(bars, line)
         .resolve_scale(y="independent")
-        .properties(height=340, title="PM2.5 in Lahore over time + estimated Lahore gasoline use (bars)")
+        .properties(height=340, title="PM2.5 in Lahore over time + estimated Lahore gasoline use")
     )
 
 
@@ -269,9 +269,9 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
 def satellite_trend_single(panel: pd.DataFrame, choice: str):
     df = panel.copy()
 
-    if choice == "Urban greenness (NDVI)":
+    if choice == "Urban greenness":
         col = "ndvi_mean"
-        ytitle = "NDVI (mean over bbox)"
+        ytitle = "NDVI"
         title = "Urban greenness over time"
         fmt = ".3f"
     else:
@@ -294,9 +294,7 @@ def satellite_trend_single(panel: pd.DataFrame, choice: str):
         .properties(height=240, title=title)
     )
 
-
-# NEW: load saved PNG + convert to data URI for folium.ImageOverlay
-def img_to_data_uri(p: Path) -> str:
+def img_to_data_uri(p: Path):
     b = p.read_bytes()
     b64 = base64.b64encode(b).decode("utf-8")
     return f"data:image/png;base64,{b64}"
@@ -377,7 +375,7 @@ if mv_tidy is not None and selected_regions:
 
     with colB:
         st.altair_chart(vehicle_breakdown_chart(vsum), use_container_width=True)
-        st.caption("Bar labels show: registered count | emissions factor (manual).")
+        st.caption("Bar labels show: registered count | emissions factor.")
 
 else:
     st.info("Vehicle data not available (or no regions selected).")

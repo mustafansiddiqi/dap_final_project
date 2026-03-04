@@ -4,6 +4,8 @@ from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import ee
+import requests
+
 
 # Paths
 
@@ -19,6 +21,10 @@ NDVI_OUT = DATA_DIR / "lahore_ndvi_monthly_2019_2023.csv"
 PANEL_OUT = DATA_DIR / "lahore_monthly_panel.csv"
 MOTOR_VEHICLES_TIDY_OUT = DATA_DIR / "motor_vehicles_subset_tidy.csv"
 
+# NEW: folder for saved satellite PNGs (commit this folder to your repo)
+SAT_IMG_DIR = DATA_DIR / "satellite_images"
+VIIRS_IMG_DIR = SAT_IMG_DIR / "viirs"
+NDVI_IMG_DIR = SAT_IMG_DIR / "ndvi"
 
 
 # Time window + AOI
@@ -51,17 +57,16 @@ def ee_init():
         ee.Initialize()
 
 
-def to_df_from_featurecollection(fc: ee.FeatureCollection) :
+def to_df_from_featurecollection(fc: ee.FeatureCollection):
     info = fc.getInfo()
     feats = info.get("features", [])
     rows = [f.get("properties", {}) for f in feats]
     return pd.DataFrame(rows)
 
 
-
 # AQI: hourly to monthly mean
 
-def load_aqi_hourly_to_monthly(aqi_path: Path) :
+def load_aqi_hourly_to_monthly(aqi_path: Path):
     df = pd.read_csv(aqi_path)
 
     if "timestamp_utc" not in df.columns or "pm25_ugm3" not in df.columns:
@@ -77,8 +82,7 @@ def load_aqi_hourly_to_monthly(aqi_path: Path) :
     return monthly.sort_values("date").reset_index(drop=True)
 
 
-
-# Earth Engine extracts
+# Earth Engine extracts (tabular)
 
 def extract_viirs_monthly(aoi: ee.Geometry, months: list[date]):
     viirs = (
@@ -134,6 +138,76 @@ def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]):
     df["date"] = pd.to_datetime(df["date"])
     return df.sort_values("date").reset_index(drop=True)
 
+
+# NEW: Save monthly PNG images (so Streamlit Cloud only reads files)
+def save_satellite_pngs(aoi: ee.Geometry, months: list[date]):
+    VIIRS_IMG_DIR.mkdir(parents=True, exist_ok=True)
+    NDVI_IMG_DIR.mkdir(parents=True, exist_ok=True)
+
+    xmin, ymin, xmax, ymax = LAHORE_BBOX
+    region = [xmin, ymin, xmax, ymax]  # [xmin, ymin, xmax, ymax]
+
+    viirs_col = (
+        ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG")
+        .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
+        .select("avg_rad")
+    )
+
+    ndvi_col = (
+        ee.ImageCollection("MODIS/061/MOD13Q1")
+        .filterDate(START_DATE.isoformat(), END_EXCL.isoformat())
+        .select("NDVI")
+    )
+
+    for d in months:
+        yyyymm = f"{d.year}{d.month:02d}"
+
+        # ---- VIIRS ----
+        viirs_path = VIIRS_IMG_DIR / f"viirs_{yyyymm}.png"
+        if not viirs_path.exists():
+            mstart = ee.Date(d.isoformat())
+            mend = mstart.advance(1, "month")
+            viirs_img = (
+                viirs_col.filterDate(mstart, mend)
+                .mean()
+                .clip(aoi)
+                .visualize(min=0, max=60, palette=["000004", "1f0c48", "550f6d", "88226a", "b6364f", "e35933", "fca50a", "fcffa4"])
+            )
+            url = viirs_img.getThumbURL(
+                {
+                    "region": region,
+                    "dimensions": 768,
+                    "format": "png",
+                }
+            )
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+            viirs_path.write_bytes(r.content)
+
+        # ---- NDVI ----
+        ndvi_path = NDVI_IMG_DIR / f"ndvi_{yyyymm}.png"
+        if not ndvi_path.exists():
+            mstart = ee.Date(d.isoformat())
+            mend = mstart.advance(1, "month")
+            ndvi_img = (
+                ndvi_col.filterDate(mstart, mend)
+                .mean()
+                .multiply(0.0001)
+                .clip(aoi)
+                .visualize(min=0.0, max=0.8, palette=["440154", "3b528b", "21918c", "5ec962", "fde725"])
+            )
+            url = ndvi_img.getThumbURL(
+                {
+                    "region": region,
+                    "dimensions": 768,
+                    "format": "png",
+                }
+            )
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+            ndvi_path.write_bytes(r.content)
+
+    print(f"Saved satellite PNGs to: {SAT_IMG_DIR}")
 
 
 # Motor vehicles: tidy subset (Lahore + Lahore Divn merged)
@@ -200,11 +274,15 @@ def main():
     aoi = lahore_geometry()
     months = month_starts(START_DATE, END_EXCL)
 
-    print("Pulling VIIRS nightlights...")
+    # NEW: save satellite PNGs for the app to use
+    print("Saving satellite PNGs (VIIRS + NDVI) into /data/satellite_images ...")
+    save_satellite_pngs(aoi, months)
+
+    print("Pulling VIIRS nightlights (tabular)...")
     df_viirs = extract_viirs_monthly(aoi, months)
     df_viirs.to_csv(VIIRS_OUT, index=False)
 
-    print("Pulling MODIS NDVI...")
+    print("Pulling MODIS NDVI (tabular)...")
     df_ndvi = extract_ndvi_monthly(aoi, months)
     df_ndvi.to_csv(NDVI_OUT, index=False)
 

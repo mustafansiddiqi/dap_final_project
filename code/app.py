@@ -3,19 +3,16 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 import calendar
 import requests
+import base64
 
 import pandas as pd
 import altair as alt
 import streamlit as st
 
-import json
-import ee
-from google.oauth2 import service_account
 import folium
 from streamlit_folium import st_folium
 import branca.colormap as cm
 from geopy.geocoders import Nominatim
-
 
 
 # Paths
@@ -30,13 +27,17 @@ MOTOR_TIDY_PATH = DATA_DIR / "motor_vehicles_subset_tidy.csv"
 MOTOR_RAW_PATH = DATA_DIR / "motor-vehicles-registered-by-type-division-and-district-the-punjab-uptil-2021.csv"
 ENERGY_PATH = DATA_DIR / "energy_institute_table.csv"
 
+# NEW: satellite image folders (produced by preprocessing.py)
+SAT_IMG_DIR = DATA_DIR / "satellite_images"
+VIIRS_IMG_DIR = SAT_IMG_DIR / "viirs"
+NDVI_IMG_DIR = SAT_IMG_DIR / "ndvi"
+
 LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
 
 START = date(2019, 1, 1)
 END_EXCL = date(2025, 1, 1)
 
 API_KEY = "48b8cf776845b1b3b76e183c60826568"
-
 
 
 # Manual emissions per km (EDIT THESE)
@@ -55,90 +56,22 @@ EMISSIONS_G_PER_KM = {
     "Other Vehicles": 300,
 }
 
-# Earth  Engine setup
-
-@st.cache_resource
-def ee_setup():
-    try:
-        # 1) Streamlit Cloud / secrets.toml path
-        if "earthengine" in st.secrets and "service_account_json" in st.secrets["earthengine"]:
-            info = json.loads(st.secrets["earthengine"]["service_account_json"])
-
-        # 2) Local dev: read JSON file checked out locally (NOT committed)
-        else:
-            key_path = REPO_ROOT / ".streamlit" / "ee_key.json"
-            info = json.loads(key_path.read_text())
-
-        creds = service_account.Credentials.from_service_account_info(
-            info,
-            scopes=["https://www.googleapis.com/auth/earthengine"],
-        )
-        ee.Initialize(creds)
-
-    except Exception as e:
-        st.error(f"Earth Engine initialization failed: {e}")
-        st.stop()
-
-    return ee.Geometry.Rectangle(LAHORE_BBOX)
 
 def month_list():
     months = []
     cur = START
     while cur < END_EXCL:
         months.append(cur)
-        # advance 1 month safely
         cur = (cur.replace(day=1) + relativedelta(months=1))
     return months
+
 
 MONTHS = month_list()
 
 
-def month_range(d: date):
-    s = ee.Date(d.isoformat())
-    e = s.advance(1, "month")
-    return s, e
-
-
-def add_ee_tile_layer(fmap: folium.Map, ee_image: ee.Image, vis_params: dict, name: str, opacity: float = 0.8):
-    map_id_dict = ee_image.getMapId(vis_params)
-    folium.TileLayer(
-        tiles=map_id_dict["tile_fetcher"].url_format,
-        attr="Google Earth Engine",
-        name=name,
-        overlay=True,
-        control=True,
-        opacity=opacity,
-    ).add_to(fmap)
-
-
-def ee_nightlights(month_date: date, aoi: ee.Geometry):
-    s, e = month_range(month_date)
-    img = (
-        ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG")
-        .filterDate(s, e)
-        .select("avg_rad")
-        .mean()
-        .clip(aoi)
-    )
-    return img, {"min": 0, "max": 60}, "Nightlights (VIIRS)"
-
-
-def ee_ndvi(month_date: date, aoi: ee.Geometry):
-    s, e = month_range(month_date)
-    img = (
-        ee.ImageCollection("MODIS/061/MOD13Q1")
-        .filterDate(s, e)
-        .select("NDVI")
-        .mean()
-        .multiply(0.0001)
-        .clip(aoi)
-    )
-    return img, {"min": 0.0, "max": 0.8}, "Urban greenness (NDVI)"
-
-
 LAYER_EXPLANATION_MAP = {
-    "Urban greenness (NDVI)": "Map layer shows monthly mean NDVI (greenness index) averaged over the Lahore bounding box (MODIS NDVI, rescaled ×0.0001).",
-    "Nightlights (VIIRS)": "Map layer shows monthly mean nighttime radiance averaged over the Lahore bounding box (VIIRS DNB avg_rad).",
+    "Urban greenness (NDVI)": "Map layer shows monthly NDVI (greenness) for the Lahore bounding box (pre-saved PNGs from MODIS NDVI ×0.0001).",
+    "Nightlights (VIIRS)": "Map layer shows monthly nighttime radiance for the Lahore bounding box (pre-saved PNGs from VIIRS avg_rad).",
 }
 
 LAYER_EXPLANATION_TREND = {
@@ -167,10 +100,6 @@ def load_motor_tidy(path: Path):
 
 @st.cache_data
 def load_paqi_station_monthly(path: Path):
-    
-    # Hourly PAQI to station-level monthly mean PM2.5.
-    # Output: date (month start), station_name, latitude, longitude, pm25_mean
-    
     df = pd.read_csv(path)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
     df = df.dropna(subset=["timestamp_utc", "pm25_ugm3", "latitude", "longitude"])
@@ -198,11 +127,6 @@ def clean_num(x):
 
 @st.cache_data
 def compute_region_shares_from_motor_raw(motor_raw_path: Path):
-    
-    # Uses Total column to compute shares of total Punjab registered vehicles:
-    # Lahore (incl. Divn.) share
-    # Sheikhupura share
-
     mv = pd.read_csv(motor_raw_path)
     if "Division/ District" not in mv.columns or "Total" not in mv.columns:
         raise ValueError("Motor vehicle raw file must contain 'Division/ District' and 'Total'.")
@@ -224,11 +148,6 @@ def compute_region_shares_from_motor_raw(motor_raw_path: Path):
 
 @st.cache_data
 def load_pakistan_gasoline_kbd(energy_path: Path):
-    
-    # energy_institute_table.csv format:
-    # Region / Grouping, Units, 1980..2025
-    # We extract Pakistan Gasoline Consumption (kb/d) and return yearly series.
-    
     ei = pd.read_csv(energy_path)
 
     row = ei[
@@ -247,11 +166,6 @@ def load_pakistan_gasoline_kbd(energy_path: Path):
 
 
 def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataFrame, lahore_share: float):
-
-    # Convert annual kb/d to monthly barrels:
-    # kbd * 1000 (bbl/day) * days_in_month
-    # Then multiply by lahore_share to estimate Lahore barrels.
-
     yearly = energy_yearly.set_index("year")["kbd"].to_dict()
 
     barrels = []
@@ -265,7 +179,6 @@ def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataF
         barrels.append(lahore_monthly_bbl)
 
     return pd.Series(barrels, index=panel.index, name="lahore_gasoline_barrels_est")
-
 
 
 # Vehicle aggregation + metrics
@@ -286,14 +199,9 @@ def compute_vehicle_metrics(vsum: pd.DataFrame):
     return {"total_vehicles": total_vehicles, "weighted_avg_emissions": weighted_avg, "total_emissions": total_emissions}
 
 
-
 # Charts
 
 def pm25_with_fuel_bars(panel: pd.DataFrame):
-
-    # Bars: estimated Lahore gasoline barrels (legend + custom color + include AQI in tooltip)
-    # Line: PM2.5
-    
     df = panel.copy()
     df["bar_series"] = "Estimated gasoline barrels (Lahore)"
 
@@ -321,7 +229,7 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
     line = base.mark_area().encode(
         y=alt.Y("pm25_mean:Q", title="PM2.5 (µg/m³)"),
         tooltip=[alt.Tooltip("date:T", title="Month"), alt.Tooltip("pm25_mean:Q", title="PM2.5", format=".1f")],
-        opacity=alt.value(0.6), color = alt.value("#A87272")
+        opacity=alt.value(0.6), color=alt.value("#A87272")
     )
 
     return (
@@ -359,11 +267,6 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
 
 
 def satellite_trend_single(panel: pd.DataFrame, choice: str):
-    
-    # Single-series trend depending on choice:
-    #   - NDVI: ndvi_mean
-    #   - VIIRS: nightlights_avg_rad_mean
-
     df = panel.copy()
 
     if choice == "Urban greenness (NDVI)":
@@ -391,6 +294,19 @@ def satellite_trend_single(panel: pd.DataFrame, choice: str):
         .properties(height=240, title=title)
     )
 
+
+# NEW: load saved PNG + convert to data URI for folium.ImageOverlay
+def img_to_data_uri(p: Path) -> str:
+    b = p.read_bytes()
+    b64 = base64.b64encode(b).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def sat_image_path(mode: str, month_date: date) -> Path:
+    yyyymm = f"{month_date.year}{month_date.month:02d}"
+    if mode == "Nightlights (VIIRS)":
+        return VIIRS_IMG_DIR / f"viirs_{yyyymm}.png"
+    return NDVI_IMG_DIR / f"ndvi_{yyyymm}.png"
 
 
 # App UI
@@ -465,7 +381,6 @@ if mv_tidy is not None and selected_regions:
 
 else:
     st.info("Vehicle data not available (or no regions selected).")
-    # still show satellite trend control even if vehicle missing
     sat_choice = st.radio(
         "Satellite trend to display",
         options=["Urban greenness (NDVI)", "Nightlights (VIIRS)"],
@@ -478,9 +393,10 @@ else:
 
 st.divider()
 
+
 def blue_to_red_colormap(vmin: float, vmax: float):
     return cm.LinearColormap(
-        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffb2", "#fe9929", "#cc4c02", "#b10026"],
+        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
         vmin=vmin,
         vmax=vmax,
     )
@@ -488,20 +404,15 @@ def blue_to_red_colormap(vmin: float, vmax: float):
 
 # Interactive map section
 
-
 st.subheader("Interactive map: Air quality vs Nightlights vs Urban greenness")
 
-aoi = ee_setup()
-
-# 3-way selector
 map_mode = st.radio(
     "Map mode",
     options=["Air quality (PAQI monitors)", "Nightlights (VIIRS)", "Urban greenness (NDVI)"],
-    index=2,  # default NDVI on load
+    index=2,
     horizontal=True,
 )
 
-# Month slider (drives all three modes)
 selected_month_date = st.select_slider(
     "Month",
     options=MONTHS,
@@ -511,44 +422,56 @@ selected_month_date = st.select_slider(
 
 opacity = st.slider("Layer opacity (satellite only)", 0.0, 1.0, 0.85, 0.05)
 
-# Base map
 fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
 
-# Outline bbox
 xmin, ymin, xmax, ymax = LAHORE_BBOX
-folium.Rectangle(bounds=[[ymin, xmin], [ymax, xmax]], color="black", weight=2, fill=False).add_to(fmap)
+bbox_bounds = [[ymin, xmin], [ymax, xmax]]
+folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
 
-# fixed color scale for PAQI so months are comparable
+
 @st.cache_data
 def paqi_global_scale(paqi_df: pd.DataFrame):
-    # use robust bounds so outliers don't wreck the scale
     q05 = float(paqi_df["pm25_mean"].quantile(0.05))
     q95 = float(paqi_df["pm25_mean"].quantile(0.95))
     if q05 == q95:
         q95 = q05 + 1.0
     return q05, q95
 
-def blue_to_red_colormap(vmin: float, vmax: float):
-    # dark blue to cyan to yellow to orange to red
-    return cm.LinearColormap(
-        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
-        vmin=vmin,
-        vmax=vmax,
-    )
 
 # render the selected mode
 if map_mode == "Nightlights (VIIRS)":
-    st.caption("Map shows **monthly mean nighttime radiance (VIIRS avg_rad)** averaged within each pixel for the selected month.")
-    img, vis, name = ee_nightlights(selected_month_date, aoi)
-    add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+    st.caption("Map shows **monthly nighttime radiance (VIIRS avg_rad)** for the selected month (pre-saved PNG overlay).")
+    img_path = sat_image_path("Nightlights (VIIRS)", selected_month_date)
+
+    if not img_path.exists():
+        st.info(f"Missing satellite image: {img_path}. Run preprocessing.py and commit /data/satellite_images.")
+    else:
+        folium.raster_layers.ImageOverlay(
+            image=img_to_data_uri(img_path),
+            bounds=bbox_bounds,
+            opacity=opacity,
+            name="Nightlights (VIIRS)",
+            interactive=True,
+            cross_origin=False,
+        ).add_to(fmap)
 
 elif map_mode == "Urban greenness (NDVI)":
-    st.caption("Map shows **monthly mean NDVI greenness index (MODIS NDVI ×0.0001)** for the selected month.")
-    img, vis, name = ee_ndvi(selected_month_date, aoi)
-    add_ee_tile_layer(fmap, img, vis, name, opacity=opacity)
+    st.caption("Map shows **monthly NDVI greenness (MODIS NDVI ×0.0001)** for the selected month (pre-saved PNG overlay).")
+    img_path = sat_image_path("Urban greenness (NDVI)", selected_month_date)
+
+    if not img_path.exists():
+        st.info(f"Missing satellite image: {img_path}. Run preprocessing.py and commit /data/satellite_images.")
+    else:
+        folium.raster_layers.ImageOverlay(
+            image=img_to_data_uri(img_path),
+            bounds=bbox_bounds,
+            opacity=opacity,
+            name="Urban greenness (NDVI)",
+            interactive=True,
+            cross_origin=False,
+        ).add_to(fmap)
 
 else:
-    # Air quality (PAQI monitors)
     st.caption("Map shows **monthly mean PM2.5 at PAQI monitors**. Colors go **dark blue (better) → red (worse)** and update as you change months.")
 
     if paqi is None:
@@ -651,7 +574,6 @@ if address:
             aqi_index = personal_data[0]["main"]["aqi"]
             aqi_label = aqi_description(aqi_index)
 
-            # Main summary sentence
             st.markdown(
                 f"### The air quality in your area is **{aqi_label}** (AQI Index: {aqi_index})."
             )

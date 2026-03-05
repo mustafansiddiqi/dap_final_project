@@ -1,3 +1,4 @@
+from curses.panel import panel
 from pathlib import Path
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -6,7 +7,7 @@ import ee
 import requests
 
 
-DATA_DIR = "/Users/khushanshahad/GitHub/dap_final_project/data"
+DATA_DIR = "/Users/mustafa/Mustafa_Mac/UChicago/Year 2/Winter 2026/DAP2/Final Project/dap_final_project/data"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -79,7 +80,7 @@ def load_aqi_hourly_to_monthly(aqi_path: Path):
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
     df = df.dropna(subset=["timestamp_utc", "pm25_ugm3"])
 
-    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2024-01-01")].copy()
+    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2025-01-01")].copy()
     df["date"] = df["timestamp_utc"].dt.to_period("M").dt.to_timestamp()
 
     monthly = df.groupby("date", as_index=False).agg(pm25_mean=("pm25_ugm3", "mean"))
@@ -142,8 +143,6 @@ def extract_ndvi_monthly(aoi: ee.Geometry, months: list[date]):
     df["date"] = pd.to_datetime(df["date"])
     return df.sort_values("date").reset_index(drop=True)
 
-
-# NEW: Save monthly PNG images (so Streamlit Cloud only reads files)
 def save_satellite_pngs(aoi: ee.Geometry, months: list[date]):
     VIIRS_IMG_DIR.mkdir(parents=True, exist_ok=True)
     NDVI_IMG_DIR.mkdir(parents=True, exist_ok=True)
@@ -295,6 +294,9 @@ def main():
     print("Merging monthly panel...")
     panel = aqi_monthly.merge(df_viirs, on="date", how="left").merge(df_ndvi, on="date", how="left")
     panel.to_csv(PANEL_OUT, index=False)
+
+    panel["ndvi_mean"] = pd.to_numeric(panel["ndvi_mean"], errors="coerce")
+    panel["nightlights_avg_rad_mean"] = pd.to_numeric(panel["nightlights_avg_rad_mean"], errors="coerce")
 
     if MOTOR_VEHICLES_PATH.exists():
         mv_tidy = tidy_motor_vehicles(MOTOR_VEHICLES_PATH)

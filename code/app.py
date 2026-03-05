@@ -3,7 +3,10 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 import calendar
 import requests
+<<<<<<< HEAD
 import base64
+=======
+>>>>>>> origin/khushan
 
 import pandas as pd
 import altair as alt
@@ -13,6 +16,14 @@ import folium
 from streamlit_folium import st_folium
 import branca.colormap as cm
 from geopy.geocoders import Nominatim
+<<<<<<< HEAD
+=======
+
+
+
+# Paths
+
+>>>>>>> origin/khushan
 
 
 # Paths
@@ -36,13 +47,14 @@ LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
 
 START = date(2019, 1, 1)
 END_EXCL = date(2025, 1, 1)
+<<<<<<< HEAD
+=======
+
+API_KEY = "48b8cf776845b1b3b76e183c60826568"
+>>>>>>> origin/khushan
 
 API_KEY = "48b8cf776845b1b3b76e183c60826568"
 
-
-# Manual emissions per km (EDIT THESE)
-# Units: g/km (or consistent unit you choose)
-# Keys must match vehicle_type in motor_vehicles_subset_tidy.csv
 
 EMISSIONS_G_PER_KM = {
     "Motor Cars, Jeeps and Station Wagons": 240,
@@ -100,6 +112,13 @@ def load_motor_tidy(path: Path):
 
 @st.cache_data
 def load_paqi_station_monthly(path: Path):
+<<<<<<< HEAD
+=======
+    
+    # Hourly PAQI to station-level monthly mean PM2.5.
+    # Output: date (month start), station_name, latitude, longitude, pm25_mean
+    
+>>>>>>> origin/khushan
     df = pd.read_csv(path)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
     df = df.dropna(subset=["timestamp_utc", "pm25_ugm3", "latitude", "longitude"])
@@ -127,6 +146,14 @@ def clean_num(x):
 
 @st.cache_data
 def compute_region_shares_from_motor_raw(motor_raw_path: Path):
+<<<<<<< HEAD
+=======
+    
+    # Uses Total column to compute shares of total Punjab registered vehicles:
+    # Lahore (incl. Divn.) share
+    # Sheikhupura share
+
+>>>>>>> origin/khushan
     mv = pd.read_csv(motor_raw_path)
     if "Division/ District" not in mv.columns or "Total" not in mv.columns:
         raise ValueError("Motor vehicle raw file must contain 'Division/ District' and 'Total'.")
@@ -148,6 +175,14 @@ def compute_region_shares_from_motor_raw(motor_raw_path: Path):
 
 @st.cache_data
 def load_pakistan_gasoline_kbd(energy_path: Path):
+<<<<<<< HEAD
+=======
+    
+    # energy_institute_table.csv format:
+    # Region / Grouping, Units, 1980..2025
+    # We extract Pakistan Gasoline Consumption (kb/d) and return yearly series.
+    
+>>>>>>> origin/khushan
     ei = pd.read_csv(energy_path)
 
     row = ei[
@@ -166,6 +201,14 @@ def load_pakistan_gasoline_kbd(energy_path: Path):
 
 
 def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataFrame, lahore_share: float):
+<<<<<<< HEAD
+=======
+
+    # Convert annual kb/d to monthly barrels:
+    # kbd * 1000 (bbl/day) * days_in_month
+    # Then multiply by lahore_share to estimate Lahore barrels.
+
+>>>>>>> origin/khushan
     yearly = energy_yearly.set_index("year")["kbd"].to_dict()
 
     barrels = []
@@ -202,6 +245,13 @@ def compute_vehicle_metrics(vsum: pd.DataFrame):
 # Charts
 
 def pm25_with_fuel_bars(panel: pd.DataFrame):
+<<<<<<< HEAD
+=======
+
+    # Bars: estimated Lahore gasoline barrels (legend + custom color + include AQI in tooltip)
+    # Line: PM2.5
+    
+>>>>>>> origin/khushan
     df = panel.copy()
     df["bar_series"] = "Estimated gasoline barrels (Lahore)"
 
@@ -216,7 +266,7 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
         color=alt.Color(
             "bar_series:N",
             title="",
-            scale=alt.Scale(domain=["Estimated gasoline barrels (Lahore)"], range=["#4C78A8"]),
+            scale=alt.Scale(domain=["Estimated gasoline barrels (Lahore)"], range=["#031d6d"]),
             legend=alt.Legend(orient="top"),
         ),
         tooltip=[
@@ -229,11 +279,15 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
     line = base.mark_area().encode(
         y=alt.Y("pm25_mean:Q", title="PM2.5 (µg/m³)"),
         tooltip=[alt.Tooltip("date:T", title="Month"), alt.Tooltip("pm25_mean:Q", title="PM2.5", format=".1f")],
-        opacity=alt.value(0.6), color=alt.value("#A87272")
+<<<<<<< HEAD
+        opacity=alt.value(1.0), color=alt.value("#2ecc71"))
+=======
+        opacity=alt.value(0.6), color = alt.value("#A87272")
     )
+>>>>>>> origin/khushan
 
     return (
-        alt.layer(bars, line)
+        alt.layer(line, bars)
         .resolve_scale(y="independent")
         .properties(height=340, title="PM2.5 in Lahore over time + estimated Lahore gasoline use")
     )
@@ -261,12 +315,20 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
         .properties(height=420, title="Vehicle breakdown with emissions labels")
     )
 
-    bars = base.mark_bar()
+    bars = bars = base.mark_bar(color="#1a237e")
     labels = base.mark_text(align="left", dx=6).encode(text="label:N")
     return bars + labels
 
 
 def satellite_trend_single(panel: pd.DataFrame, choice: str):
+<<<<<<< HEAD
+=======
+    
+    # Single-series trend depending on choice:
+    #   - NDVI: ndvi_mean
+    #   - VIIRS: nightlights_avg_rad_mean
+
+>>>>>>> origin/khushan
     df = panel.copy()
 
     if choice == "Urban greenness":
@@ -282,7 +344,7 @@ def satellite_trend_single(panel: pd.DataFrame, choice: str):
 
     return (
         alt.Chart(df.dropna(subset=[col]))
-        .mark_line()
+        .mark_area(opacity = 1, color = "#2ecc71")
         .encode(
             x=alt.X("date:T", title="Month"),
             y=alt.Y(f"{col}:Q", title=ytitle),
@@ -333,8 +395,18 @@ else:
 
 # Static charts section
 
-st.subheader("Static charts")
-
+st.markdown("""
+    <style>
+    span[data-baseweb="tag"] {
+        background-color: #27ae60 !important;
+    }
+    [data-testid="stArrowVegaLiteChart"] {
+        border: 1px solid #cccccc;
+        border-radius: 6px;
+        padding: 8px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 regions_available = ["Lahore (incl. Divn.)", "Sheikhupura"]
 selected_regions = st.multiselect(
     "Regions (motor vehicle table)",
@@ -362,6 +434,11 @@ if mv_tidy is not None and selected_regions:
     colA, colB = st.columns([1.0, 1.5], vertical_alignment="bottom")
 
     with colA:
+<<<<<<< HEAD
+=======
+        st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
+
+>>>>>>> origin/khushan
         sat_choice = st.radio(
             "Satellite trend to display",
             options=["Urban greenness (NDVI)", "Nightlights (VIIRS)"],
@@ -390,25 +467,34 @@ else:
 
 st.divider()
 
+<<<<<<< HEAD
 
 def blue_to_red_colormap(vmin: float, vmax: float):
+=======
+def blue_to_red_colormap(vmin: float, vmax: float):
     return cm.LinearColormap(
-        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
+        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffb2", "#fe9929", "#cc4c02", "#b10026"],
         vmin=vmin,
         vmax=vmax,
     )
 
+
 # Interactive map section
+
 
 st.subheader("Interactive map: Air quality vs Nightlights vs Urban greenness")
 
+aoi = ee_setup()
+
+# 3-way selector
 map_mode = st.radio(
     "Map mode",
     options=["Air quality (PAQI monitors)", "Nightlights (VIIRS)", "Urban greenness (NDVI)"],
-    index=2,
+    index=2,  # default NDVI on load
     horizontal=True,
 )
 
+# Month slider (drives all three modes)
 selected_month_date = st.select_slider(
     "Month",
     options=MONTHS,
@@ -416,13 +502,64 @@ selected_month_date = st.select_slider(
     format_func=lambda d: d.strftime("%Y-%m"),
 )
 
-opacity = 0.85
+opacity = st.slider("Layer opacity (satellite only)", 0.0, 1.0, 0.85, 0.05)
 
+# Base map
 fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
 
+# Outline bbox
+xmin, ymin, xmax, ymax = LAHORE_BBOX
+folium.Rectangle(bounds=[[ymin, xmin], [ymax, xmax]], color="black", weight=2, fill=False).add_to(fmap)
+
+# fixed color scale for PAQI so months are comparable
+@st.cache_data
+def paqi_global_scale(paqi_df: pd.DataFrame):
+    # use robust bounds so outliers don't wreck the scale
+    q05 = float(paqi_df["pm25_mean"].quantile(0.05))
+    q95 = float(paqi_df["pm25_mean"].quantile(0.95))
+    if q05 == q95:
+        q95 = q05 + 1.0
+    return q05, q95
+
+def blue_to_red_colormap(vmin: float, vmax: float):
+    # dark blue to cyan to yellow to orange to red
+>>>>>>> origin/khushan
+    return cm.LinearColormap(
+        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
+        vmin=vmin,
+        vmax=vmax,
+    )
+
+# Interactive map section — dual side-by-side comparison
+
+st.subheader("Interactive map: Air quality vs Satellite comparison")
+st.markdown(
+    "Compare **Air quality (PAQI monitors)** on the left against a satellite layer of your choice on the right. "
+    "Both maps show the same month."
+)
+
+# shared controls
+ctrl_col1, ctrl_col2 = st.columns([2, 1])
+with ctrl_col1:
+    selected_month_date = st.select_slider(
+        "Month (both maps)",
+        options=MONTHS,
+        value=MONTHS[-1],
+        format_func=lambda d: d.strftime("%Y-%m"),
+        key="dual_map_month",
+    )
+with ctrl_col2:
+    compare_layer = st.radio(
+        "Right map layer",
+        options=["Nightlights (VIIRS)", "Urban greenness (NDVI)"],
+        index=1,
+        horizontal=False,
+        key="compare_layer_choice",
+    )
+
+opacity = 0.85
 xmin, ymin, xmax, ymax = LAHORE_BBOX
 bbox_bounds = [[ymin, xmin], [ymax, xmax]]
-folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
 
 
 @st.cache_data
@@ -434,81 +571,144 @@ def paqi_global_scale(paqi_df: pd.DataFrame):
     return q05, q95
 
 
-# render the selected mode
-if map_mode == "Nightlights (VIIRS)":
-    st.caption("Map shows **monthly nighttime radiance (VIIRS avg_rad)** for the selected month (pre-saved PNG overlay).")
-    img_path = sat_image_path("Nightlights (VIIRS)", selected_month_date)
-
-    if not img_path.exists():
-        st.info(f"Missing satellite image: {img_path}. Run preprocessing.py and commit /data/satellite_images.")
-    else:
-        folium.raster_layers.ImageOverlay(
-            image=img_to_data_uri(img_path),
-            bounds=bbox_bounds,
-            opacity=opacity,
-            name="Nightlights (VIIRS)",
-            interactive=True,
-            cross_origin=False,
-        ).add_to(fmap)
-
-elif map_mode == "Urban greenness (NDVI)":
-    st.caption("Map shows **monthly NDVI greenness (MODIS NDVI ×0.0001)** for the selected month (pre-saved PNG overlay).")
-    img_path = sat_image_path("Urban greenness (NDVI)", selected_month_date)
-
-    if not img_path.exists():
-        st.info(f"Missing satellite image: {img_path}. Run preprocessing.py and commit /data/satellite_images.")
-    else:
-        folium.raster_layers.ImageOverlay(
-            image=img_to_data_uri(img_path),
-            bounds=bbox_bounds,
-            opacity=opacity,
-            name="Urban greenness (NDVI)",
-            interactive=True,
-            cross_origin=False,
-        ).add_to(fmap)
-
-else:
-    st.caption("Map shows **monthly mean PM2.5 at PAQI monitors**. Colors go **dark blue (better) → red (worse)** and update as you change months.")
+def build_paqi_map(month_date) -> folium.Map:
+    """Build the left-hand Air Quality (PAQI) map."""
+    fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
+    folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
 
     if paqi is None:
-        st.info("PAQI file not found, so monitor points can’t be shown.")
-    else:
-        sel_month_ts = pd.Timestamp(f"{selected_month_date.year}-{selected_month_date.month:02d}-01")
-        month_df = paqi[paqi["date"] == sel_month_ts].copy()
+        return fmap
 
-        if month_df.empty:
-            st.caption("No PAQI monitor data found for this month.")
-        else:
-            vmin, vmax = paqi_global_scale(paqi)
-            colormap = blue_to_red_colormap(vmin, vmax)
-            colormap.caption = "Monthly mean PM2.5 (µg/m³) — dark blue (better) → red (worse)"
+    sel_month_ts = pd.Timestamp(f"{month_date.year}-{month_date.month:02d}-01")
+    month_df = paqi[paqi["date"] == sel_month_ts].copy()
 
-            for _, r in month_df.iterrows():
-                pm = float(r["pm25_mean"])
-                color = colormap(pm)
+    if not month_df.empty:
+        vmin, vmax = paqi_global_scale(paqi)
+        colormap = blue_to_red_colormap(vmin, vmax)
+        colormap.caption = "Monthly mean PM2.5 (µg/m³)"
 
-                folium.CircleMarker(
-                    location=[float(r["latitude"]), float(r["longitude"])],
-                    radius=8,
-                    color=color,
-                    fill=True,
-                    fill_color=color,
-                    fill_opacity=0.95,
-                    popup=folium.Popup(
-                        html=(
-                            f"<b>{r['station_name']}</b><br>"
-                            f"Month: {sel_month_ts.strftime('%Y-%m')}<br>"
-                            f"<b>PM2.5:</b> {pm:.1f} µg/m³"
-                        ),
-                        max_width=280,
+        for _, r in month_df.iterrows():
+            pm = float(r["pm25_mean"])
+            color = colormap(pm)
+            folium.CircleMarker(
+                location=[float(r["latitude"]), float(r["longitude"])],
+                radius=10,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.95,
+                popup=folium.Popup(
+                    html=(
+                        f"<b>{r['station_name']}</b><br>"
+                        f"Month: {sel_month_ts.strftime('%Y-%m')}<br>"
+                        f"<b>PM2.5:</b> {pm:.1f} µg/m³"
                     ),
-                    tooltip=f"{r['station_name']} | PM2.5: {pm:.1f}",
-                ).add_to(fmap)
+                    max_width=280,
+                ),
+                tooltip=f"{r['station_name']} | PM2.5: {pm:.1f}",
+            ).add_to(fmap)
 
-            colormap.add_to(fmap)
+        colormap.add_to(fmap)
 
-folium.LayerControl(collapsed=False).add_to(fmap)
+    return fmap
 
+<<<<<<< HEAD
+
+def build_satellite_map(mode: str, month_date) -> folium.Map:
+    """Build the right-hand satellite layer map."""
+    fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
+    folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
+
+    img_path = sat_image_path(mode, month_date)
+    if img_path.exists():
+        folium.raster_layers.ImageOverlay(
+            image=img_to_data_uri(img_path),
+            bounds=bbox_bounds,
+            opacity=opacity,
+            name=mode,
+            interactive=True,
+            cross_origin=False,
+        ).add_to(fmap)
+    else:
+        folium.Marker(
+            location=[31.52, 74.35],
+            popup=f"Missing image: {img_path.name}. Run preprocessing.py.",
+            icon=folium.Icon(color="red", icon="info-sign"),
+        ).add_to(fmap)
+
+    folium.LayerControl(collapsed=False).add_to(fmap)
+    return fmap
+
+
+# render dual maps
+month_label = selected_month_date.strftime("%B %Y")
+map_left_col, map_right_col = st.columns(2)
+
+with map_left_col:
+    st.markdown(
+        f"<div style='text-align:center; font-weight:600; font-size:15px; "
+        f"padding:6px 0 4px; background:#1a1a2e; color:#e0e0ff; border-radius:6px;'>"
+        f"<span style='color:#2ecc71'>●</span> Air Quality (PAQI monitors) — {month_label}</div>",
+        unsafe_allow_html=True,
+    )
+    if paqi is None:
+        st.info("PAQI file not found — monitor points unavailable.")
+    else:
+        sel_ts = pd.Timestamp(f"{selected_month_date.year}-{selected_month_date.month:02d}-01")
+        n_monitors = int((paqi["date"] == sel_ts).sum())
+        st.caption(
+            f"Monthly mean PM2.5 at PAQI monitors. "
+            f"Colors: **dark blue (better) → red (worse)**. "
+            f"{n_monitors} station(s) for this month."
+        )
+    left_map = build_paqi_map(selected_month_date)
+    st_folium(
+        left_map,
+        width=None,
+        height=460,
+        key=f"left_map_{selected_month_date.strftime('%Y%m')}",
+        returned_objects=[],
+    )
+
+with map_right_col:
+    layer_emoji = "🌙" if compare_layer == "Nightlights (VIIRS)" else "🌿"
+    st.markdown(
+        f"<div style='text-align:center; font-weight:600; font-size:15px; "
+        f"padding:6px 0 4px; background:#0d2b1a; color:#b8ffcc; border-radius:6px;'>"
+        f"{layer_emoji} {compare_layer} — {month_label}</div>",
+        unsafe_allow_html=True,
+    )
+    right_img_path = sat_image_path(compare_layer, selected_month_date)
+    if not right_img_path.exists():
+        st.info(
+            f"Missing satellite image: `{right_img_path.name}`. "
+            "Run preprocessing.py and commit `/data/satellite_images`."
+        )
+    else:
+        caption_text = (
+            "Monthly nighttime radiance (VIIRS avg_rad). Brighter = more light emitted."
+            if compare_layer == "Nightlights (VIIRS)"
+            else "Monthly NDVI greenness (MODIS ×0.0001). Greener = more vegetation."
+        )
+        st.caption(caption_text)
+    right_map = build_satellite_map(compare_layer, selected_month_date)
+    st_folium(
+        right_map,
+        width=None,
+        height=460,
+        key=f"right_map_{compare_layer}_{selected_month_date.strftime('%Y%m')}",
+        returned_objects=[],
+    )
+
+st.caption(
+    "💡 **How to read this:** Pan and zoom each map independently. "
+    "Use the month slider above to step through time and observe how air quality co-varies with "
+    + ("nighttime light intensity." if True else "vegetation cover.")
+    + " Toggle the right map between Nightlights and NDVI using the selector above."
+)
+
+
+=======
 st_folium(
     fmap,
     width=1100,
@@ -516,6 +716,7 @@ st_folium(
     key=f"map_{map_mode}_{selected_month_date.strftime('%Y%m')}_{opacity}",
 )
 
+>>>>>>> origin/khushan
 pollutants = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
 selected_pollutants = st.multiselect("Select Pollutants", pollutants, default=["pm25"])
 
@@ -552,6 +753,10 @@ def fetch_aqi(lat, lon, mode="current", start=None, end=None):
         return r.json().get("list", [])
     return []
 
+<<<<<<< HEAD
+=======
+aoi = ee_setup()
+>>>>>>> origin/khushan
 
 st.subheader("My Location")
 
@@ -570,10 +775,18 @@ if address:
             aqi_index = personal_data[0]["main"]["aqi"]
             aqi_label = aqi_description(aqi_index)
 
+<<<<<<< HEAD
+=======
+            # Main summary sentence
+>>>>>>> origin/khushan
             st.markdown(
                 f"### The air quality in your area is **{aqi_label}** (AQI Index: {aqi_index})."
             )
         else:
             st.warning("No AQI data available for this location.")
     else:
+<<<<<<< HEAD
         st.warning("Address not found.")
+=======
+        st.warning("Address not found.")
+>>>>>>> origin/khushan

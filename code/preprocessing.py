@@ -1,13 +1,12 @@
 from pathlib import Path
 from datetime import date
 from dateutil.relativedelta import relativedelta
-
 import pandas as pd
 import ee
 import requests
 
 
-# Paths
+DATA_DIR = "/Users/khushanshahad/GitHub/dap_final_project/data"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -64,7 +63,12 @@ def to_df_from_featurecollection(fc: ee.FeatureCollection):
     return pd.DataFrame(rows)
 
 
-# AQI: hourly to monthly mean
+def ee_init() -> None:
+    try:
+        ee.Initialize(project='test-project-486602')
+    except Exception:
+        ee.Authenticate()
+        ee.Initialize()
 
 def load_aqi_hourly_to_monthly(aqi_path: Path):
     df = pd.read_csv(aqi_path)

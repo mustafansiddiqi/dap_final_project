@@ -257,33 +257,71 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
         .properties(height=340, title="PM2.5 in Lahore over time + estimated Lahore gasoline use")
     )
 
-
 def vehicle_breakdown_chart(vsum: pd.DataFrame):
-    vsum = vsum.copy()
-    vsum["label"] = vsum.apply(
-        lambda r: f"{r['count']:,.0f} | {int(r['emissions_g_per_km'])} g/km" if pd.notna(r["emissions_g_per_km"]) else f"{r['count']:,.0f} | N/A",
-        axis=1,
+
+    df = vsum.copy()
+
+    # Ensure numeric
+    df["emissions_g_per_km"] = pd.to_numeric(df["emissions_g_per_km"], errors="coerce")
+    df["count"] = pd.to_numeric(df["count"], errors="coerce")
+
+    # Compute average emissions
+    avg_emissions = df["emissions_g_per_km"].mean()
+
+    # Deviation from average
+    df["delta_emissions"] = df["emissions_g_per_km"] - avg_emissions
+    df["above_avg"] = df["delta_emissions"] >= 0
+
+    # Label now shows BOTH deviation and registrations
+    df["label"] = df.apply(
+        lambda r: f"{r['delta_emissions']:+.0f} g/km | {r['count']:,.0f}",
+        axis=1
     )
 
-    base = (
-        alt.Chart(vsum)
-        .encode(
-            y=alt.Y("vehicle_type:N", sort="-x", title="Vehicle type"),
-            x=alt.X("count:Q", title="Registered vehicles"),
-            tooltip=[
-                alt.Tooltip("vehicle_type:N", title="Type"),
-                alt.Tooltip("count:Q", format=",.0f"),
-                alt.Tooltip("emissions_g_per_km:Q", title="Emissions (g/km)", format=",.0f"),
-                alt.Tooltip("total_emissions:Q", title="Total emissions (count×g/km)", format=",.0f"),
-            ],
-        )
-        .properties(height=420, title="Vehicle breakdown with emissions labels")
+    base = alt.Chart(df).encode(
+        y=alt.Y(
+            "vehicle_type:N",
+            axis=alt.Axis(labelLimit=300),
+            sort=alt.SortField("delta_emissions"),
+            title="Vehicle type"
+        ),
+        tooltip=[
+            alt.Tooltip("vehicle_type:N", title="Type"),
+            alt.Tooltip("count:Q", title="Registered vehicles", format=",.0f"),
+            alt.Tooltip("emissions_g_per_km:Q", title="Emissions (g/km)", format=",.0f"),
+            alt.Tooltip("delta_emissions:Q", title="Δ from average", format="+,.0f"),
+        ],
     )
 
-    bars = bars = base.mark_bar(color="#1a237e")
-    labels = base.mark_text(align="left", dx=6).encode(text="label:N")
-    return bars + labels
+    bars = base.mark_bar().encode(
+        x=alt.X(
+            "delta_emissions:Q",
+            title="Deviation from average emissions (g/km)"
+        ),
+        color=alt.condition(
+            "datum.above_avg",
+            alt.value("#c62828"),   # above avg = red
+            alt.value("#2e7d32")    # below avg = green
+        ),
+    )
 
+    # vertical zero line
+    zero_line = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(strokeWidth=2).encode(
+        x="x:Q"
+    )
+
+    labels = base.mark_text(
+        dx=6,
+        align="left"
+    ).encode(
+        x="delta_emissions:Q",
+        text="label:N"
+    )
+
+    return (bars + zero_line + labels).properties(
+        height=420,
+        title="Vehicle emissions relative to average (hourglass chart)"
+    )
 
 def satellite_trend_both(panel: pd.DataFrame, show_ndvi: bool = True, show_viirs: bool = True):
     df = panel.copy()

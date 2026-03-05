@@ -260,15 +260,11 @@ def pm25_with_fuel_bars(panel: pd.DataFrame):
 def vehicle_breakdown_chart(vsum: pd.DataFrame):
 
     df = vsum.copy()
-
-    # Ensure numeric
     df["emissions_g_per_km"] = pd.to_numeric(df["emissions_g_per_km"], errors="coerce")
     df["count"] = pd.to_numeric(df["count"], errors="coerce")
 
-    # Compute average emissions
     avg_emissions = df["emissions_g_per_km"].mean()
 
-    # Deviation from average
     df["delta_emissions"] = df["emissions_g_per_km"] - avg_emissions
     df["above_avg"] = df["delta_emissions"] >= 0
 
@@ -289,7 +285,7 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
             alt.Tooltip("vehicle_type:N", title="Type"),
             alt.Tooltip("count:Q", title="Registered vehicles", format=",.0f"),
             alt.Tooltip("emissions_g_per_km:Q", title="Emissions (g/km)", format=",.0f"),
-            alt.Tooltip("delta_emissions:Q", title="Δ from average", format="+,.0f"),
+            alt.Tooltip("delta_emissions:Q", title="Dev. from average", format="+,.0f"),
         ],
     )
 

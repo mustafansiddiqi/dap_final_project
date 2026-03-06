@@ -316,7 +316,7 @@ def vehicle_breakdown_chart(vsum: pd.DataFrame):
 
     return (bars + zero_line + labels).properties(
         height=420,
-        title="Vehicle emissions relative to average (hourglass chart)"
+        title="Vehicle emissions relative to average"
     )
 
 def satellite_trend_both(panel: pd.DataFrame, show_ndvi: bool = True, show_viirs: bool = True):
@@ -417,7 +417,6 @@ if not PANEL_PATH.exists():
     st.stop()
 
 panel = load_panel(PANEL_PATH)
-
 mv_tidy = load_motor_tidy(MOTOR_TIDY_PATH) if MOTOR_TIDY_PATH.exists() else None
 paqi = load_paqi_station_monthly(PAQI_PATH) if PAQI_PATH.exists() else None
 
@@ -431,7 +430,15 @@ else:
     panel["lahore_gasoline_barrels_est"] = float("nan")
 
 
-# Static charts section
+def blue_to_red_colormap(vmin: float, vmax: float):
+    return cm.LinearColormap(
+        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
+        vmin=vmin,
+        vmax=vmax,
+    )
+
+
+st.subheader("Static trends and vehicle composition")
 
 st.markdown("""
     <style>
@@ -443,14 +450,29 @@ st.markdown("""
         border-radius: 6px;
         padding: 8px;
     }
+    .insight-box {
+        background-color: #f8f9fa;
+        border-left: 6px solid #2c7be5;
+        padding: 14px 16px;
+        border-radius: 8px;
+        margin-top: 10px;
+        margin-bottom: 18px;
+        color: #1f2937;
+        font-size: 0.96rem;
+        line-height: 1.5;
+    }
     </style>
 """, unsafe_allow_html=True)
+
 regions_available = ["Lahore (incl. Divn.)", "Sheikhupura"]
 selected_regions = st.multiselect(
     "Regions (motor vehicle table)",
     options=regions_available,
     default=["Lahore (incl. Divn.)"],
+    key="static_regions_bottom",
 )
+
+vsum = None
 
 if mv_tidy is not None and selected_regions:
     vsum = vehicle_summary(mv_tidy, selected_regions)
@@ -458,66 +480,16 @@ if mv_tidy is not None and selected_regions:
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Total registered vehicles (selected regions)", f"{metrics['total_vehicles']:,.0f}")
-    c2.metric("Weighted avg emissions per km", "N/A" if pd.isna(metrics["weighted_avg_emissions"]) else f"{metrics['weighted_avg_emissions']:,.1f} g/km")
-    c3.metric("Total emissions (sum count×avg)", "N/A" if pd.isna(metrics["total_emissions"]) else f"{metrics['total_emissions']:,.0f} (g/km×vehicles)")
-
-    if shares is not None:
-        st.caption(
-            f"Vehicle shares (of Punjab total): Lahore (incl. Divn.) = {shares['lahore_share']:.2%}, "
-            f"Sheikhupura = {shares['sheikhupura_share']:.2%}. "
-            f"Punjab total vehicles = {shares['total_punjab']:,.0f}."
-        )
-    
-    st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
-colA, colB = st.columns([1.0, 1.5], vertical_alignment="bottom")
-
-with colA:
-    show_ndvi = st.checkbox("Urban greenness (NDVI)", value=True, key="show_ndvi")
-    show_viirs = st.checkbox("Nightlights (VIIRS)", value=True, key="show_viirs")
-
-    if show_ndvi:
-        st.caption(LAYER_EXPLANATION_TREND["Urban greenness (NDVI)"])
-    if show_viirs:
-        st.caption(LAYER_EXPLANATION_TREND["Nightlights (VIIRS)"])
-
-    st.altair_chart(
-        satellite_trend_both(panel, show_ndvi=show_ndvi, show_viirs=show_viirs),
-        use_container_width=True
+    c2.metric(
+        "Weighted avg emissions per km",
+        "N/A" if pd.isna(metrics["weighted_avg_emissions"]) else f"{metrics['weighted_avg_emissions']:,.1f} g/km"
+    )
+    c3.metric(
+        "Total emissions (sum count×avg)",
+        "N/A" if pd.isna(metrics["total_emissions"]) else f"{metrics['total_emissions']:,.0f} (g/km×vehicles)"
     )
 
-with colB:
-    if vsum is not None and len(vsum) > 0:
-        st.altair_chart(vehicle_breakdown_chart(vsum), use_container_width=True)
-        st.caption("Bar labels show: registered count | emissions factor.")
-    else:
-        st.info("Vehicle data not available (or no regions selected).")
-
-        sat_choice = st.radio(
-            "Satellite trend to display",
-            options=["Urban greenness (NDVI)", "Nightlights (VIIRS)"],
-            index=0,
-            horizontal=True,
-            key="sat_trend_choice_no_vehicle",
-        )
-
-        st.caption(LAYER_EXPLANATION_TREND[sat_choice])
-
-        st.altair_chart(
-            satellite_trend_single(panel, sat_choice),
-            use_container_width=True
-        )
-
-st.divider()
-
-
-def blue_to_red_colormap(vmin: float, vmax: float):
-    return cm.LinearColormap(
-        colors=["#081d58", "#225ea8", "#41b6c4", "#ffffbf", "#fdae61", "#f46d43", "#a50026"],
-        vmin=vmin,
-        vmax=vmax,
-    )
-
-# Interactive map section — dual side-by-side comparison
+# Interactive map section
 
 st.subheader("Interactive map: Air quality vs Satellite comparison")
 st.markdown(
@@ -525,7 +497,6 @@ st.markdown(
     "Both maps show the same month."
 )
 
-# shared controls
 ctrl_col1, ctrl_col2 = st.columns([2, 1])
 with ctrl_col1:
     selected_month_date = st.select_slider(
@@ -559,7 +530,6 @@ def paqi_global_scale(paqi_df: pd.DataFrame):
 
 
 def build_paqi_map(month_date) -> folium.Map:
-    """Build the left-hand Air Quality (PAQI) map."""
     fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
     folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
 
@@ -599,8 +569,8 @@ def build_paqi_map(month_date) -> folium.Map:
 
     return fmap
 
+
 def build_satellite_map(mode: str, month_date) -> folium.Map:
-    """Build the right-hand satellite layer map."""
     fmap = folium.Map(location=[31.52, 74.35], zoom_start=10, tiles="cartodbpositron")
     folium.Rectangle(bounds=bbox_bounds, color="black", weight=2, fill=False).add_to(fmap)
 
@@ -625,7 +595,6 @@ def build_satellite_map(mode: str, month_date) -> folium.Map:
     return fmap
 
 
-# render dual maps
 month_label = selected_month_date.strftime("%B %Y")
 map_left_col, map_right_col = st.columns(2)
 
@@ -646,6 +615,7 @@ with map_left_col:
             f"Colors: **dark blue (better) → red (worse)**. "
             f"{n_monitors} station(s) for this month."
         )
+
     left_map = build_paqi_map(selected_month_date)
     st_folium(
         left_map,
@@ -656,13 +626,13 @@ with map_left_col:
     )
 
 with map_right_col:
-    
     st.markdown(
         f"<div style='text-align:center; font-weight:600; font-size:15px; "
         f"padding:6px 0 4px; background:#0d2b1a; color:#b8ffcc; border-radius:6px;'>"
-        f" {compare_layer} — {month_label}</div>",
+        f"{compare_layer} — {month_label}</div>",
         unsafe_allow_html=True,
     )
+
     right_img_path = sat_image_path(compare_layer, selected_month_date)
     if not right_img_path.exists():
         st.info(
@@ -676,6 +646,7 @@ with map_right_col:
             else "Monthly NDVI greenness (MODIS ×0.0001). Greener = more vegetation."
         )
         st.caption(caption_text)
+
     right_map = build_satellite_map(compare_layer, selected_month_date)
     st_folium(
         right_map,
@@ -688,10 +659,18 @@ with map_right_col:
 st.caption(
     "**How to read this:** Pan and zoom each map independently. "
     "Use the month slider above to step through time and observe how air quality co-varies with "
-    + ("nighttime light intensity." if True else "vegetation cover.")
+    + ("nighttime light intensity." if compare_layer == "Nightlights (VIIRS)" else "vegetation cover.")
     + " Toggle the right map between Nightlights and NDVI using the selector above."
 )
 
+st.markdown(
+        """
+        <div class="insight-box">
+        <b>Note:</b> As time passes, we see a side by side comparison of air quality (PAQI monitors) against satellite layers (VIIRS nightlights or Ubran Greenness NDVI, which is the Normalized Difference Vegetation Index). This allows us to visually inspect whether changes in air quality co-occur with changes in nighttime light intensity or vegetation cover, which can provide clues about underlying drivers.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 pollutants = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
 selected_pollutants = st.multiselect("Select Pollutants", pollutants, default=["pm25"])
@@ -729,7 +708,6 @@ def fetch_aqi(lat, lon, mode="current", start=None, end=None):
         return r.json().get("list", [])
     return []
 
-
 st.subheader("My Location")
 
 address = st.text_input("Enter your address or zip code:")
@@ -754,3 +732,59 @@ if address:
             st.warning("No AQI data available for this location.")
     else:
         st.warning("Address not found.")
+
+#Incorporating Prof Ganong's feedback, we are removing the static charts from the dashboard.
+
+
+# show_static = st.checkbox("Show Static Charts", value=False)
+# if show_static:
+
+#     st.divider()
+#     if shares is not None:
+#             st.caption(
+#                 f"Vehicle shares (of Punjab total): Lahore (incl. Divn.) = {shares['lahore_share']:.2%}, "
+#                 f"Sheikhupura = {shares['sheikhupura_share']:.2%}. "
+#                 f"Punjab total vehicles = {shares['total_punjab']:,.0f}."
+#             )
+#             st.altair_chart(pm25_with_fuel_bars(panel), use_container_width=True)
+#             st.markdown(
+#             """
+#             <div class="insight-box">
+#             <b>Insight:</b> Even though the fuel consumption remains constant, we see air quality changes seasonally, implying that it might not be fuel quality/ consumption qty which contributes to the poor air quality.
+#             </div>
+#             """,
+#             unsafe_allow_html=True
+#         )
+#     else:
+#         st.info("Vehicle data not available or no region selected.")
+
+#     colA, colB = st.columns([1.0, 1.5], vertical_alignment="bottom")
+
+#     with colA:
+#         show_ndvi = st.checkbox("Urban greenness (NDVI)", value=True, key="show_ndvi_bottom")
+#         show_viirs = st.checkbox("Nightlights (VIIRS)", value=True, key="show_viirs_bottom")
+
+#         if show_ndvi:
+#             st.caption(LAYER_EXPLANATION_TREND["Urban greenness (NDVI)"])
+#         if show_viirs:
+#             st.caption(LAYER_EXPLANATION_TREND["Nightlights (VIIRS)"])
+
+#         st.altair_chart(
+#             satellite_trend_both(panel, show_ndvi=show_ndvi, show_viirs=show_viirs),
+#             use_container_width=True
+#         )
+
+#     with colB:
+#         if vsum is not None and len(vsum) > 0:
+#             st.altair_chart(vehicle_breakdown_chart(vsum), use_container_width=True)
+#             st.caption("Bar labels show deviation from average emissions and registered count.")
+#         else:
+#             st.info("Vehicle data not available (or no regions selected).")
+#     st.markdown(
+#     """
+#     <div class="insight-box">
+#     <b>Insight:</b> Even though the fuel consumption remains constant, we see air quality changes seasonally, implying that it might not be fuel quality/ consumption qty which contributes to the poor air quality.
+#     </div>
+#     """,
+#     unsafe_allow_html=True
+#     )

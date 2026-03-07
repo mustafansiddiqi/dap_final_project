@@ -1,5 +1,5 @@
 ---
-title: "Decomposing Lahore Air Quality: Environmental and Economic Drivers (2019–2024)"
+title: "Decomposing Lahore Air Quality (2019–2024)"
 authors: 
   - name: Mustafa Siddiqi
   - name: Khushan Shahad
@@ -18,67 +18,14 @@ execute:
 
 # Research Question
 
-Lahore has experienced some of the highest air pollution levels recorded globally in recent years. Policymakers frequently attribute this problem to several competing explanations including agricultural burning, traffic emissions, and cross-border pollution. Our project evaluates these claims using multiple datasets to examine how Lahore’s air quality has evolved over time and what factors may be associated with these changes.
+Lahore has experienced some of the highest air pollution levels recorded globally in recent years. Policymakers frequently attribute this problem to several competing explanations including agricultural burning, traffic emissions, and cross-border pollution. Our project evaluates these claims using multiple datasets to examine how Lahore’s air quality has evolved over time and what factors may be associated with these changes. We want to see what factors are associated with the deterioration of air quality in Lahore, and do available data suggest that current urban policies are worsening conditions?
 
-The central research question guiding this analysis is:
-
-**What factors are associated with the deterioration of air quality in Lahore, and do available data suggest that current policy interventions are improving conditions?**
-
-To address this question, we analyze three related dimensions:
-
-1. **Air quality trends** measured through PM2.5 monitoring stations.
-2. **Urban development and activity** using satellite night-time light intensity.
-3. **Urban environmental change** using satellite vegetation indices (NDVI).
-
-We also incorporate data on **vehicle registrations and fuel consumption** to evaluate the possible contribution of transportation emissions.
-
-Our goal is not causal inference but rather **descriptive policy analysis** using publicly available environmental and satellite datasets.
-
----
+To address this question, we analyze three related dimensions: Air quality trends measured through PM2.5 monitoring stations, Urban development and activity using satellite night-time light intensity and Urban environmental change using satellite vegetation indices (NDVI).
 
 # Data and Methodology
 
-Our analysis integrates several datasets covering the period **2019–2024**.
-
-### Air Quality Data
-
-We use hourly particulate matter measurements from the **Pakistan Air Quality Initiative (PAQI)** monitoring network. These measurements are aggregated into monthly averages for each monitoring station in Lahore.
-
-### Satellite Data
-
-Two satellite datasets were processed using **Google Earth Engine**:
-
-- **VIIRS Nighttime Lights**  
-  Used as a proxy for economic activity and urban densification.
-
-- **MODIS NDVI (Normalized Difference Vegetation Index)**  
-  Measures vegetation greenness and provides a proxy for urban green space.
-
-Both datasets were spatially averaged across a bounding box covering Lahore to produce monthly indicators.
-
-### Transportation Data
-
-We incorporate:
-
-- **Punjab motor vehicle registration data**
-- **Pakistan Energy Institute gasoline consumption data**
-
-Vehicle counts were aggregated by type (motorcycles, cars, trucks, buses) and combined with emission intensity estimates to approximate potential emission contributions.
-
-### Data Processing Pipeline
-
-The project was implemented using **Python**. Key steps included:
-
-- Aggregating hourly PM2.5 observations into monthly averages.
-- Extracting satellite imagery statistics through Earth Engine reducers.
-- Cleaning and reshaping vehicle registry data.
-- Combining all indicators into a unified **monthly panel dataset**.
-
-This integrated dataset allowed us to visualize relationships between pollution, economic activity, urban greenness, and transportation trends.
-
----
-
-# Static Visualization 1: PM2.5 Trends Over Time
+Our analysis integrates several datasets covering the period 2019–2024.
+We use hourly particulate matter measurements from the Pakistan Air Quality Initiative (PAQI). These measurements are aggregated into monthly averages for each sensor. Two satellite datasets were processed using Google Earth Engine. VIIRS Nighttime Lights which is used as a proxy for economic activity and urban densification NDVI (Normalized Difference Vegetation Index) which measures vegetation greenness and provides a proxy for urban green space. Both datasets were spatially averaged across a bounding box covering Lahore to produce monthly indicators. We incorporate the Punjab motor vehicle registration data and the Energy Institute global gasoline consumption data. Vehicle counts were aggregated by type (motorcycles, cars, trucks, buses) and combined with emission intensity estimates to approximate potential emission contributions. We then combine all indicators into a unified monthly panel dataset.
 
 ```{python}
 from pathlib import Path
@@ -408,7 +355,7 @@ def satellite_trend_both(panel: pd.DataFrame, show_ndvi: bool = True, show_viirs
     base = alt.Chart(df).encode(
         x=alt.X("date:T", title="Month")
     ).properties(
-    height=280,
+    height=200,
     width=750,
     title="Satellite trends over time")
 
@@ -496,47 +443,33 @@ vehicle_metrics = compute_vehicle_metrics(vsum)
 #panel.head()
 ```
 
+### Static Visualizations and Findings
 
 ```{python}
 save_and_show(pm25_with_fuel_bars(panel), "pm25_with_fuel_bars")
 ```
-**Key Finding:** Despite relative stability in estimated fuel consumption across the period, PM2.5 levels exhibit strong seasonal variation, with peaks in winter months (November–February). This pattern suggests that fuel consumption alone does not explain air quality deterioration, pointing instead to seasonal meteorological factors or non-fuel pollution sources (e.g., agricultural burning, construction dust).
+**Key Finding:** Despite relative stability in estimated fuel consumption across the period, PM2.5 levels show seasonal variation. This pattern suggests that fuel consumption alone does not explain air quality deterioration, pointing instead to seasonal meteorological factors or non-fuel pollution sources.
 
 ```{python}
 save_and_show(vehicle_breakdown_chart(vsum), "vehicle_breakdown_chart")
 ```
 
-**Key Finding:** Motorcycles and scooters dominate vehicle registrations (approximately 68% of the registered vehicle fleet) but emit significantly below-average emissions per kilometer. Conversely, buses, trucks, and heavy vehicles—which comprise a much smaller share—emit 2–8 times the fleet average. This distribution suggests that while heavy-duty vehicles are the primary emitters per-unit, the sheer volume of two- and three-wheelers creates a substantial aggregate contribution to emissions. Policy interventions targeting heavy vehicle traffic and fuel quality may be more cost-effective than restrictions on two-wheelers.
+**Key Finding:** Motorcycles and scooters dominate vehicle registrations yet emit significantly below-average emissions per kilometer. Buses, trucks, and heavy vehicles emit 2–8 times the fleet average. This suggests that while heavy-duty vehicles are the primary emitters per-unit. Policy interventions targeting heavy vehicle traffic and fuel quality may be more cost-effective than restrictions on two-wheelers.
 
 ```{python}
 save_and_show(satellite_trend_both(panel, show_ndvi=True, show_viirs=True), "satellite_trend_both")
 ```
 
-**Key Finding:** NDVI shows slight seasonal variation with peaks during monsoon and post-monsoon months (July–September), reflecting increased vegetation growth. Nighttime light intensity remains relatively stable with modest increases, suggesting moderate but not dramatic economic expansion. The decoupling between nightlights and PM2.5 suggests that economic growth alone does not drive pollution increases at this rate.
-# Interactive Dashboard and Findings
+**Key Finding:** The NDVI shows an overall reduction as compared to the average (dashed line), reflecting vegetation removal. Nighttime light (VIIRS) intensity remains relatively stable with modest increases, suggesting moderate economic expansion in traffic. The decoupling between nightlights and PM2.5 suggests that economic growth alone does not drive pollution increases at this rate, but the removal of vegetation may be a contributor.
 
-We developed a Streamlit dashboard to provide interactive exploration of these relationships. The dashboard includes:
+### Streamlit Dashboard
+We developed a Streamlit dashboard to demonstrate that air quality deterioration in Lahore is decoupled from fuel consumption trends, pointing to seasonal meteorological patterns and non-vehicular pollution sources as primary drivers. The static analysis presented above forms the analytical backbone of the dashboard.
+The dashboard includes:
 
-1. **Dual Interactive Maps:** Side-by-side comparison of air quality (PAQI monitors) against satellite layers (VIIRS nightlights or NDVI), allowing users to visually inspect month-by-month co-variation.
+1. Dual Interactive Maps: A side-by-side comparison of air quality (PAQI monitors) against satellite layers (VIIRS nightlights or NDVI), allowing users to visually inspect month-by-month co-variation.
 
-2. **Regional Vehicle Analysis:** Dynamic filtering by region (Lahore, Sheikhupura) with real-time computation of total vehicles, weighted-average emissions, and aggregate emission profiles.
+2. Regional Vehicle Analysis: Dynamic filtering by region (Lahore, Sheikhupura) with real-time computation of total vehicles, weighted-average emissions, and aggregate emission profiles.
 
-3. **Satellite Imagery Layers:** Monthly pre-rendered satellite PNG overlays (VIIRS and NDVI) from Google Earth Engine, displayed directly on folium maps with automatic color-scaling.
+3. Satellite Imagery Layers: Monthly pre-rendered satellite PNG overlays (VIIRS and NDVI) from Google Earth Engine, displayed directly on folium maps with automatic color-scaling.
 
-4. **Real-time AQI Lookup:** Integration with OpenWeatherMap API for live air quality queries at user-specified locations.
-
-The application successfully demonstrates that air quality deterioration in Lahore is decoupled from fuel consumption trends, pointing to seasonal meteorological patterns and non-vehicular pollution sources as primary drivers. The static analysis presented above forms the analytical backbone of the dashboard.
-
----
-
-# Conclusion
-
-This analysis challenges simplistic attributions of Lahore's air quality crisis to vehicular emissions or fuel consumption alone. While transportation is a documented contributor, the strong seasonal pattern of PM2.5 independent of fuel consumption suggests that other factors—including agricultural burning, construction activity, and meteorological phenomena—play significant roles.
-
-Future work should:
-- Incorporate meteorological data (wind speed, boundary layer height, temperature inversions).
-- Disaggregate satellite indicators by season.
-- Combine satellite-derived emission estimates with ground-based measurements.
-- Evaluate the impact of specific policy interventions using interrupted time-series methods.
-
-The code, data processing pipeline, and interactive visualization framework developed in this project provide a foundation for ongoing policy-relevant analysis of South Asian air quality.
+4. Real-time AQI Lookup: Integration with OpenWeatherMap API for live air quality queries at user-specified locations.

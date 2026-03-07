@@ -1,0 +1,542 @@
+---
+title: "Decomposing Lahore Air Quality: Environmental and Economic Drivers (2019–2024)"
+authors: 
+  - name: Mustafa Siddiqi
+  - name: Khushan Shahad
+date: "Winter 2026"
+format: pdf
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+**Group Members**
+
+- Mustafa Siddiqi — GitHub: `mustafansiddiqi`
+- Khushan Shahad — GitHub: `kshahad`
+
+# Research Question
+
+Lahore has experienced some of the highest air pollution levels recorded globally in recent years. Policymakers frequently attribute this problem to several competing explanations including agricultural burning, traffic emissions, and cross-border pollution. Our project evaluates these claims using multiple datasets to examine how Lahore’s air quality has evolved over time and what factors may be associated with these changes.
+
+The central research question guiding this analysis is:
+
+**What factors are associated with the deterioration of air quality in Lahore, and do available data suggest that current policy interventions are improving conditions?**
+
+To address this question, we analyze three related dimensions:
+
+1. **Air quality trends** measured through PM2.5 monitoring stations.
+2. **Urban development and activity** using satellite night-time light intensity.
+3. **Urban environmental change** using satellite vegetation indices (NDVI).
+
+We also incorporate data on **vehicle registrations and fuel consumption** to evaluate the possible contribution of transportation emissions.
+
+Our goal is not causal inference but rather **descriptive policy analysis** using publicly available environmental and satellite datasets.
+
+---
+
+# Data and Methodology
+
+Our analysis integrates several datasets covering the period **2019–2024**.
+
+### Air Quality Data
+
+We use hourly particulate matter measurements from the **Pakistan Air Quality Initiative (PAQI)** monitoring network. These measurements are aggregated into monthly averages for each monitoring station in Lahore.
+
+### Satellite Data
+
+Two satellite datasets were processed using **Google Earth Engine**:
+
+- **VIIRS Nighttime Lights**  
+  Used as a proxy for economic activity and urban densification.
+
+- **MODIS NDVI (Normalized Difference Vegetation Index)**  
+  Measures vegetation greenness and provides a proxy for urban green space.
+
+Both datasets were spatially averaged across a bounding box covering Lahore to produce monthly indicators.
+
+### Transportation Data
+
+We incorporate:
+
+- **Punjab motor vehicle registration data**
+- **Pakistan Energy Institute gasoline consumption data**
+
+Vehicle counts were aggregated by type (motorcycles, cars, trucks, buses) and combined with emission intensity estimates to approximate potential emission contributions.
+
+### Data Processing Pipeline
+
+The project was implemented using **Python**. Key steps included:
+
+- Aggregating hourly PM2.5 observations into monthly averages.
+- Extracting satellite imagery statistics through Earth Engine reducers.
+- Cleaning and reshaping vehicle registry data.
+- Combining all indicators into a unified **monthly panel dataset**.
+
+This integrated dataset allowed us to visualize relationships between pollution, economic activity, urban greenness, and transportation trends.
+
+---
+
+# Static Visualization 1: PM2.5 Trends Over Time
+
+```{python}
+from pathlib import Path
+from datetime import date
+from dateutil.relativedelta import relativedelta
+import calendar
+import requests
+import base64
+
+import pandas as pd
+import altair as alt
+
+# If your .qmd is in repo root, use this:
+REPO_ROOT = Path.cwd()
+DATA_DIR = REPO_ROOT / "data"
+
+PANEL_PATH = DATA_DIR / "lahore_monthly_panel.csv"
+PAQI_PATH = DATA_DIR / "PAQI_lahore_hourly_pm25_2019_2024.csv"
+MOTOR_TIDY_PATH = DATA_DIR / "motor_vehicles_subset_tidy.csv"
+MOTOR_RAW_PATH = DATA_DIR / "motor-vehicles-registered-by-type-division-and-district-the-punjab-uptil-2021.csv"
+ENERGY_PATH = DATA_DIR / "energy_institute_table.csv"
+
+SAT_IMG_DIR = DATA_DIR / "satellite_images"
+VIIRS_IMG_DIR = SAT_IMG_DIR / "viirs"
+NDVI_IMG_DIR = SAT_IMG_DIR / "ndvi"
+
+LAHORE_BBOX = [74.10, 31.35, 74.50, 31.65]
+
+START = date(2019, 1, 1)
+END_EXCL = date(2025, 1, 1)
+
+EMISSIONS_G_PER_KM = {
+    "Motor Cars, Jeeps and Station Wagons": 240,
+    "Motor Cycles and Scooters": 148,
+    "Trucks": 1800,
+    "Pick-ups / Delivery Vans": 1350,
+    "Mini Buses/ Buses/ Flying/ Luxury Coaches": 2127,
+    "Taxis": 736,
+    "Auto Rickshaws": 530,
+    "Tractors": 1146,
+    "Other Vehicles": 240,
+}
+
+def month_list():
+    months = []
+    cur = START
+    while cur < END_EXCL:
+        months.append(cur)
+        cur = (cur.replace(day=1) + relativedelta(months=1))
+    return months
+
+MONTHS = month_list()
+
+LAYER_EXPLANATION_MAP = {
+    "Urban greenness (NDVI)": "Map layer shows monthly NDVI (greenness) for the Lahore bounding box (pre-saved PNGs from MODIS NDVI ×0.0001).",
+    "Nightlights (VIIRS)": "Map layer shows monthly nighttime radiance for the Lahore bounding box (pre-saved PNGs from VIIRS avg_rad).",
+}
+
+LAYER_EXPLANATION_TREND = {
+    "Urban greenness (NDVI)": "Trend line shows monthly mean NDVI (greenness index) averaged over the Lahore bounding box.",
+    "Nightlights (VIIRS)": "Trend line shows monthly mean radiance (avg_rad) averaged over the Lahore bounding box.",
+}
+```
+
+```{python}
+from pathlib import Path
+from IPython.display import Image, display
+import altair as alt
+
+REPO_ROOT = Path.cwd()
+FIG_DIR = REPO_ROOT / "figures"
+FIG_DIR.mkdir(exist_ok=True)
+
+def save_and_show(chart, name, scale_factor=2, ppi=200):
+    out = FIG_DIR / f"{name}.png"
+    chart.save(out, ppi=ppi, scale_factor=scale_factor)
+    display(Image(filename=str(out)))
+```
+
+```{python}
+# Data loading
+
+def load_panel(path: Path):
+    df = pd.read_csv(path)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[(df["date"] >= "2019-01-01") & (df["date"] < "2025-01-01")].copy()
+    return df.sort_values("date").reset_index(drop=True)
+
+def load_motor_tidy(path: Path):
+    df = pd.read_csv(path)
+    if not {"region", "vehicle_type", "count"}.issubset(df.columns):
+        raise ValueError(f"Unexpected motor vehicles tidy columns: {df.columns.tolist()}")
+    return df
+
+def load_paqi_station_monthly(path: Path):
+    df = pd.read_csv(path)
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
+    df = df.dropna(subset=["timestamp_utc", "pm25_ugm3", "latitude", "longitude"])
+    df = df[(df["timestamp_utc"] >= "2019-01-01") & (df["timestamp_utc"] < "2025-01-01")].copy()
+    df["date"] = df["timestamp_utc"].dt.to_period("M").dt.to_timestamp()
+
+    out = (
+        df.groupby(["date", "station_name", "latitude", "longitude"], as_index=False)
+        .agg(pm25_mean=("pm25_ugm3", "mean"))
+    )
+    return out.sort_values(["date", "station_name"]).reset_index(drop=True)
+
+def clean_num(x):
+    if pd.isna(x):
+        return float("nan")
+    s = str(x).replace(",", "").strip()
+    if s == "":
+        return float("nan")
+    try:
+        return float(s)
+    except ValueError:
+        return float("nan")
+
+def compute_region_shares_from_motor_raw(motor_raw_path: Path):
+    mv = pd.read_csv(motor_raw_path)
+    if "Division/ District" not in mv.columns or "Total" not in mv.columns:
+        raise ValueError("Motor vehicle raw file must contain 'Division/ District' and 'Total'.")
+
+    mv["Total_num"] = mv["Total"].map(clean_num)
+
+    total_punjab = float(mv.loc[mv["Division/ District"] == "The Punjab", "Total_num"].iloc[0])
+    lahore_total = mv.loc[mv["Division/ District"].isin(["Lahore", "Lahore Divn."]), "Total_num"].sum()
+    sheikh_total = float(mv.loc[mv["Division/ District"] == "Sheikhupura", "Total_num"].iloc[0])
+
+    return {
+        "total_punjab": total_punjab,
+        "lahore_total": float(lahore_total),
+        "sheikhupura_total": float(sheikh_total),
+        "lahore_share": float(lahore_total / total_punjab) if total_punjab else float("nan"),
+        "sheikhupura_share": float(sheikh_total / total_punjab) if total_punjab else float("nan"),
+    }
+
+def load_pakistan_gasoline_kbd(energy_path: Path):
+    ei = pd.read_csv(energy_path)
+
+    row = ei[
+        (ei["Region / Grouping"].str.strip() == "Pakistan")
+        & (ei["Units"].str.contains("Gasoline Consumption", na=False))
+    ].copy()
+
+    if row.empty:
+        raise ValueError("Could not find Pakistan Gasoline Consumption row in Energy Institute file.")
+
+    year_cols = [c for c in row.columns if c.isdigit()]
+    long = row.melt(
+        id_vars=["Region / Grouping", "Units"],
+        value_vars=year_cols,
+        var_name="year",
+        value_name="kbd"
+    )
+    long["year"] = long["year"].astype(int)
+    long["kbd"] = pd.to_numeric(long["kbd"], errors="coerce")
+    return long[["year", "kbd"]].sort_values("year").reset_index(drop=True)
+
+def estimate_lahore_monthly_barrels(panel: pd.DataFrame, energy_yearly: pd.DataFrame, lahore_share: float):
+    yearly = energy_yearly.set_index("year")["kbd"].to_dict()
+
+    barrels = []
+    for ts in panel["date"]:
+        y = int(ts.year)
+        m = int(ts.month)
+        kbd = yearly.get(y, float("nan"))
+        days = calendar.monthrange(y, m)[1]
+        pakistan_monthly_bbl = kbd * 1000.0 * days if pd.notna(kbd) else float("nan")
+        lahore_monthly_bbl = pakistan_monthly_bbl * lahore_share if pd.notna(pakistan_monthly_bbl) else float("nan")
+        barrels.append(lahore_monthly_bbl)
+
+    return pd.Series(barrels, index=panel.index, name="lahore_gasoline_barrels_est")
+
+# Vehicle aggregation + metrics
+def compute_vehicle_metrics(vsum: pd.DataFrame):
+    total_vehicles = float(vsum["count"].sum())
+    valid = vsum.dropna(subset=["emissions_g_per_km"]).copy()
+    weighted_avg = float((valid["count"] * valid["emissions_g_per_km"]).sum() / valid["count"].sum()) if valid["count"].sum() else float("nan")
+    total_emissions = float(valid["total_emissions"].sum()) if not valid.empty else float("nan")
+    return {"total_vehicles": total_vehicles, "weighted_avg_emissions": weighted_avg, "total_emissions": total_emissions}
+```
+
+```{python}
+def vehicle_summary(mv_tidy: pd.DataFrame, selected_regions: list[str]):
+    df = mv_tidy.copy()
+
+    df["region"] = df["region"].astype(str).str.strip()
+    df["vehicle_type"] = df["vehicle_type"].astype(str).str.strip()
+    df["count"] = pd.to_numeric(df["count"], errors="coerce")
+
+    selected_regions = [r.strip() for r in selected_regions]
+
+    df = df[df["region"].isin(selected_regions)].copy()
+
+    df = (
+        df.groupby("vehicle_type", as_index=False)["count"]
+        .sum()
+    )
+
+    df["emissions_g_per_km"] = df["vehicle_type"].map(EMISSIONS_G_PER_KM)
+    df["total_emissions"] = df["count"] * df["emissions_g_per_km"]
+
+    return df.sort_values("count", ascending=False).reset_index(drop=True)
+```
+
+```{python}
+# Charts
+
+def pm25_with_fuel_bars(panel: pd.DataFrame):
+    df = panel.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["lahore_gasoline_barrels_est"] = pd.to_numeric(df["lahore_gasoline_barrels_est"], errors="coerce")
+    df["pm25_mean"] = pd.to_numeric(df["pm25_mean"], errors="coerce")
+    df["bar_series"] = "Estimated gasoline barrels (Lahore)"
+
+    base = alt.Chart(df).encode(
+        x=alt.X("yearmonth(date):T", title="Month")
+    )
+
+    bars = base.mark_bar().encode(
+        y=alt.Y(
+            "lahore_gasoline_barrels_est:Q",
+            title="Estimated Lahore gasoline barrels (monthly)",
+            axis=alt.Axis(format="~s"),
+        ),
+        color=alt.Color(
+            "bar_series:N",
+            title="",
+            scale=alt.Scale(domain=["Estimated gasoline barrels (Lahore)"], range=["#031d6d"]),
+            legend=alt.Legend(orient="top"),
+        ),
+        tooltip=[
+            alt.Tooltip("date:T", title="Month"),
+            alt.Tooltip("lahore_gasoline_barrels_est:Q", title="Estimated Lahore barrels", format=",.0f"),
+            alt.Tooltip("pm25_mean:Q", title="PM2.5 (µg/m³)", format=".1f"),
+        ],
+        opacity=alt.value(0.5)
+    )
+
+    line = base.mark_area().encode(
+        y=alt.Y("pm25_mean:Q", title="PM2.5 (µg/m³)"),
+        tooltip=[alt.Tooltip("date:T", title="Month"), alt.Tooltip("pm25_mean:Q", title="PM2.5", format=".1f")],
+        opacity=alt.value(0.6), color = alt.value("#A87272")
+    )
+
+    return (
+        alt.layer(line, bars)
+        .resolve_scale(y="independent")
+        .properties(height=240, width=750, title="PM2.5 in Lahore over time + estimated Lahore gasoline use")
+    )
+```
+
+```{python}
+def vehicle_breakdown_chart(vsum: pd.DataFrame):
+    df = vsum.copy()
+    df["emissions_g_per_km"] = pd.to_numeric(df["emissions_g_per_km"], errors="coerce")
+    df["count"] = pd.to_numeric(df["count"], errors="coerce")
+
+    avg_emissions = df["emissions_g_per_km"].mean()
+
+    df["delta_emissions"] = df["emissions_g_per_km"] - avg_emissions
+    df["above_avg"] = df["delta_emissions"] >= 0
+
+    df["label"] = df.apply(
+        lambda r: f"{r['delta_emissions']:+.0f} g/km | {r['count']:,.0f}",
+        axis=1
+    )
+
+    base = alt.Chart(df).encode(
+        y=alt.Y(
+            "vehicle_type:N",
+            axis=alt.Axis(labelLimit=300),
+            sort=alt.SortField("delta_emissions"),
+            title="Vehicle type"
+        ),
+        tooltip=[
+            alt.Tooltip("vehicle_type:N", title="Type"),
+            alt.Tooltip("count:Q", title="Registered vehicles", format=",.0f"),
+            alt.Tooltip("emissions_g_per_km:Q", title="Emissions (g/km)", format=",.0f"),
+            alt.Tooltip("delta_emissions:Q", title="Dev. from average", format="+,.0f"),
+        ],
+    )
+
+    bars = base.mark_bar().encode(
+        x=alt.X(
+            "delta_emissions:Q",
+            title="Deviation from average emissions (g/km)"
+        ),
+        color=alt.condition(
+            "datum.above_avg",
+            alt.value("#c62828"),
+            alt.value("#2e7d32")
+        ),
+    )
+
+    zero_line = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(strokeWidth=2).encode(
+        x="x:Q"
+    )
+
+    labels = base.mark_text(
+        dx=6,
+        align="left"
+    ).encode(
+        x="delta_emissions:Q",
+        text="label:N"
+    )
+
+    return (bars + zero_line + labels).properties(
+    height=350,
+    width=750,
+        title="Vehicle emissions relative to average"
+    )
+```
+
+
+```{python}
+def satellite_trend_both(panel: pd.DataFrame, show_ndvi: bool = True, show_viirs: bool = True):
+    df = panel.copy()
+    if "date" not in df.columns:
+        raise ValueError("panel must include a 'date' column.")
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["ndvi_mean"] = pd.to_numeric(df.get("ndvi_mean"), errors="coerce")
+    df["nightlights_avg_rad_mean"] = pd.to_numeric(df.get("nightlights_avg_rad_mean"), errors="coerce")
+
+    base = alt.Chart(df).encode(
+        x=alt.X("date:T", title="Month")
+    ).properties(
+    height=280,
+    width=750,
+    title="Satellite trends over time")
+
+    layers = []
+
+    if show_ndvi:
+        ndvi = (
+            base.transform_filter("datum.ndvi_mean != null")
+            .mark_area(strokeWidth=2, opacity=0.8)
+            .encode(
+                y=alt.Y(
+                    "ndvi_mean:Q",
+                    title="NDVI",
+                    axis=alt.Axis(orient="left"),
+                    scale=alt.Scale(zero=False),
+                ),
+                color=alt.value("#2ecc71"),
+                tooltip=[
+                    alt.Tooltip("date:T", title="Month"),
+                    alt.Tooltip("ndvi_mean:Q", title="NDVI", format=".3f"),
+                ],
+            )
+        )
+
+        ndvi_trend = (
+            base.transform_regression("date", "ndvi_mean")
+            .mark_line(
+                strokeDash=[6, 4],
+                color="#145a32",
+                strokeWidth=3
+            )
+            .encode(
+                y=alt.Y("ndvi_mean:Q", axis=None)
+            )
+        )
+
+        layers.append(ndvi)
+        layers.append(ndvi_trend)
+
+    if show_viirs:
+        viirs = (
+            base.transform_filter("datum.nightlights_avg_rad_mean != null")
+            .mark_line(strokeWidth=2)
+            .encode(
+                y=alt.Y(
+                    "nightlights_avg_rad_mean:Q",
+                    title="VIIRS radiance (avg_rad)",
+                    axis=alt.Axis(orient="right"),
+                    scale=alt.Scale(zero=False),
+                ),
+                color=alt.value("#1f77b4"),
+                tooltip=[
+                    alt.Tooltip("date:T", title="Month"),
+                    alt.Tooltip("nightlights_avg_rad_mean:Q", title="Radiance", format=".3f"),
+                ],
+            )
+        )
+        layers.append(viirs)
+
+    if not layers:
+        return base.mark_text(align="left").encode(text=alt.value("Select at least one trend above."))
+
+    return alt.layer(*layers).resolve_scale(y="independent")
+
+```
+
+```{python}
+panel = load_panel(PANEL_PATH)
+mv_tidy = load_motor_tidy(MOTOR_TIDY_PATH)
+paqi_station_monthly = load_paqi_station_monthly(PAQI_PATH)
+
+region_shares = compute_region_shares_from_motor_raw(MOTOR_RAW_PATH)
+energy_yearly = load_pakistan_gasoline_kbd(ENERGY_PATH)
+
+panel["lahore_gasoline_barrels_est"] = estimate_lahore_monthly_barrels(
+    panel=panel,
+    energy_yearly=energy_yearly,
+    lahore_share=region_shares["lahore_share"]
+)
+
+selected_regions = ["Lahore (incl. Divn.", "Sheikhupura"]
+vsum = vehicle_summary(mv_tidy, selected_regions)
+vehicle_metrics = compute_vehicle_metrics(vsum)
+
+#panel.head()
+```
+
+
+```{python}
+save_and_show(pm25_with_fuel_bars(panel), "pm25_with_fuel_bars")
+```
+**Key Finding:** Despite relative stability in estimated fuel consumption across the period, PM2.5 levels exhibit strong seasonal variation, with peaks in winter months (November–February). This pattern suggests that fuel consumption alone does not explain air quality deterioration, pointing instead to seasonal meteorological factors or non-fuel pollution sources (e.g., agricultural burning, construction dust).
+
+```{python}
+save_and_show(vehicle_breakdown_chart(vsum), "vehicle_breakdown_chart")
+```
+
+**Key Finding:** Motorcycles and scooters dominate vehicle registrations (approximately 68% of the registered vehicle fleet) but emit significantly below-average emissions per kilometer. Conversely, buses, trucks, and heavy vehicles—which comprise a much smaller share—emit 2–8 times the fleet average. This distribution suggests that while heavy-duty vehicles are the primary emitters per-unit, the sheer volume of two- and three-wheelers creates a substantial aggregate contribution to emissions. Policy interventions targeting heavy vehicle traffic and fuel quality may be more cost-effective than restrictions on two-wheelers.
+
+```{python}
+save_and_show(satellite_trend_both(panel, show_ndvi=True, show_viirs=True), "satellite_trend_both")
+```
+
+**Key Finding:** NDVI shows slight seasonal variation with peaks during monsoon and post-monsoon months (July–September), reflecting increased vegetation growth. Nighttime light intensity remains relatively stable with modest increases, suggesting moderate but not dramatic economic expansion. The decoupling between nightlights and PM2.5 suggests that economic growth alone does not drive pollution increases at this rate.
+# Interactive Dashboard and Findings
+
+We developed a Streamlit dashboard to provide interactive exploration of these relationships. The dashboard includes:
+
+1. **Dual Interactive Maps:** Side-by-side comparison of air quality (PAQI monitors) against satellite layers (VIIRS nightlights or NDVI), allowing users to visually inspect month-by-month co-variation.
+
+2. **Regional Vehicle Analysis:** Dynamic filtering by region (Lahore, Sheikhupura) with real-time computation of total vehicles, weighted-average emissions, and aggregate emission profiles.
+
+3. **Satellite Imagery Layers:** Monthly pre-rendered satellite PNG overlays (VIIRS and NDVI) from Google Earth Engine, displayed directly on folium maps with automatic color-scaling.
+
+4. **Real-time AQI Lookup:** Integration with OpenWeatherMap API for live air quality queries at user-specified locations.
+
+The application successfully demonstrates that air quality deterioration in Lahore is decoupled from fuel consumption trends, pointing to seasonal meteorological patterns and non-vehicular pollution sources as primary drivers. The static analysis presented above forms the analytical backbone of the dashboard.
+
+---
+
+# Conclusion
+
+This analysis challenges simplistic attributions of Lahore's air quality crisis to vehicular emissions or fuel consumption alone. While transportation is a documented contributor, the strong seasonal pattern of PM2.5 independent of fuel consumption suggests that other factors—including agricultural burning, construction activity, and meteorological phenomena—play significant roles.
+
+Future work should:
+- Incorporate meteorological data (wind speed, boundary layer height, temperature inversions).
+- Disaggregate satellite indicators by season.
+- Combine satellite-derived emission estimates with ground-based measurements.
+- Evaluate the impact of specific policy interventions using interrupted time-series methods.
+
+The code, data processing pipeline, and interactive visualization framework developed in this project provide a foundation for ongoing policy-relevant analysis of South Asian air quality.

@@ -3,7 +3,6 @@ title: "Decomposing Lahore Air Quality (2019–2024)"
 authors: 
   - name: Mustafa Siddiqi
   - name: Khushan Shahad
-date: "Winter 2026"
 format: pdf
 execute:
   echo: false
